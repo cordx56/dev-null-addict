@@ -1,0 +1,21 @@
+name: Check code quality
+
+on:
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install components
+        run: |
+          rustup install -c rustfmt,clippy
+      - name: Check format
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy
