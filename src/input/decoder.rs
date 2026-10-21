@@ -19,7 +19,7 @@ use super::{ToggleKey, UiInput};
 /// [`take_rest`](Self::take_rest), undecoded.
 #[derive(Debug)]
 pub struct KeyDecoder {
-    toggle: ToggleKey,
+    toggle: Option<ToggleKey>,
     buf: Vec<u8>,
     buf_since: Option<Instant>,
     paste: Option<Vec<u8>>,
@@ -36,7 +36,7 @@ impl KeyDecoder {
     /// Esc key.
     pub const ESCAPE_TIMEOUT: Duration = Duration::from_millis(25);
 
-    pub fn new(toggle: ToggleKey) -> Self {
+    pub fn new(toggle: Option<ToggleKey>) -> Self {
         Self {
             toggle,
             buf: Vec::new(),
@@ -99,7 +99,10 @@ impl KeyDecoder {
             if super::protocol::is_reply(&raw) {
                 return Some(Decoded::Reply(raw));
             }
-            if let Some(event) = super::protocol::toggle_event(&raw, self.toggle) {
+            if let Some(event) = self
+                .toggle
+                .and_then(|toggle| super::protocol::toggle_event(&raw, toggle))
+            {
                 if event == super::ToggleEvent::Press {
                     return Some(Decoded::Input(UiInput::Toggle));
                 }
@@ -187,11 +190,31 @@ mod tests {
     use super::*;
     use crate::input::Key;
 
+    // Standalone input must never treat control-G as a toggle in any supported protocol.
+    #[test]
+    fn standalone_has_no_toggle() {
+        let now = Instant::now();
+        for raw in [b"\x07".as_slice(), b"\x1b[103;5u", b"\x1b[27;5;103~"] {
+            for split in 0..=raw.len() {
+                let mut decoder = KeyDecoder::new(None);
+                decoder.push(&raw[..split], now);
+                assert_eq!(decoder.next(now), None);
+                decoder.push(&raw[split..], now);
+                decoder.push(b"x", now);
+                assert_eq!(
+                    decoder.next(now),
+                    Some(Decoded::Input(UiInput::Key(Key::Char('x'))))
+                );
+                assert_eq!(decoder.next(now + KeyDecoder::ESCAPE_TIMEOUT), None);
+            }
+        }
+    }
+
     // Removed page bindings must be consumed, not leaked into text or interpreted as navigation.
     #[test]
     fn page_keys_are_inert() {
         let now = Instant::now();
-        let mut decoder = KeyDecoder::new("ctrl+g".parse().unwrap());
+        let mut decoder = KeyDecoder::new(Some("ctrl+g".parse().unwrap()));
         for raw in [
             b"\x1b[5~".as_slice(),
             b"\x1b[6~",
@@ -208,7 +231,7 @@ mod tests {
     #[test]
     fn keys_across_protocols() {
         let now = Instant::now();
-        let mut decoder = KeyDecoder::new("ctrl+g".parse().unwrap());
+        let mut decoder = KeyDecoder::new(Some("ctrl+g".parse().unwrap()));
         for (raw, expected) in [
             (&b"x"[..], Key::Char('x')),
             ("界".as_bytes(), Key::Char('界')),
@@ -261,7 +284,7 @@ mod tests {
             b"\x1b[?25;1$y",
         ] {
             for split in 1..raw.len() {
-                let mut decoder = KeyDecoder::new("ctrl+g".parse().unwrap());
+                let mut decoder = KeyDecoder::new(Some("ctrl+g".parse().unwrap()));
                 decoder.push(&raw[..split], now);
                 assert_eq!(decoder.next(now), None);
                 decoder.push(&raw[split..], now);
@@ -274,7 +297,7 @@ mod tests {
     #[test]
     fn escape_timeout_and_pull_based_rest() {
         let now = Instant::now();
-        let mut decoder = KeyDecoder::new("ctrl+g".parse().unwrap());
+        let mut decoder = KeyDecoder::new(Some("ctrl+g".parse().unwrap()));
         decoder.push(b"\x1b", now);
         assert_eq!(decoder.next(now), None);
         assert_eq!(
@@ -291,7 +314,7 @@ mod tests {
     #[test]
     fn paste_is_literal_and_normalized() {
         let now = Instant::now();
-        let mut decoder = KeyDecoder::new("ctrl+g".parse().unwrap());
+        let mut decoder = KeyDecoder::new(Some("ctrl+g".parse().unwrap()));
         for part in [b"\x1b[200~a\r".as_slice(), b"\nb\rc\x07\x1b[20", b"1~"] {
             decoder.push(part, now);
             if part != b"1~" {

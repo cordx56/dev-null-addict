@@ -30,15 +30,22 @@ impl Driver {
         options: &SessionOptions,
         size: TermSize,
     ) -> io::Result<(Self, tokio::sync::mpsc::UnboundedReceiver<Answer>)> {
-        let mut app = App::new(options.toggle, options.log, options.refresh_interval.get());
+        let mut app = App::new(
+            Some(options.toggle),
+            options.client.log,
+            options.client.refresh_interval.get(),
+        );
         app.set_layout(options.layout);
-        let (requests, answers) = Requests::new(options.key_path.clone(), options.base_url.clone());
+        let (requests, answers) = Requests::new(
+            options.client.key_path.clone(),
+            options.client.base_url.clone(),
+        );
         Ok((
             Self {
                 display: Display::new(size)?,
                 queue: InputQueue::default(),
                 requests,
-                overlay: Overlay::new(app, KeyDecoder::new(options.toggle)),
+                overlay: Overlay::new(app, KeyDecoder::new(Some(options.toggle))),
                 screen: Vt100Screen::new(size),
                 framer: OutputFramer::new(),
                 scanner: ToggleScanner::new(options.toggle),

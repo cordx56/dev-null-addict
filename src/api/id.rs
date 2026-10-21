@@ -37,6 +37,17 @@ impl fmt::Display for CommitId {
     }
 }
 
+/// A notification group's leading event id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct NotificationId(Uuid);
+
+impl From<Uuid> for NotificationId {
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
+}
+
 /// The last seven hex digits of a commit's id, as /dev/null shows it.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]

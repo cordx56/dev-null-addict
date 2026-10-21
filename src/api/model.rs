@@ -4,7 +4,7 @@ use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use super::{CommitId, Cursor, ShortHash, Username};
+use super::{CommitId, Cursor, NotificationId, ShortHash, Username};
 
 /// A /dev/null user, as commits carry their author.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -160,6 +160,73 @@ impl<T> From<Page<T>> for RawPage<T> {
     }
 }
 
+/// What a notification is about, as its `type` says.
+///
+/// A type /dev/null adds later is [`Other`](Self::Other), so that it does not
+/// fail the whole page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NotificationKind {
+    Followed,
+    Replied,
+    Mentioned,
+    Quoted,
+    Starred,
+    Approved,
+    Rejected,
+    LeveledUp,
+    #[serde(other)]
+    Other,
+}
+
+/// A group of notifications as the web shows it, led by its newest.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NotificationGroup {
+    pub id: NotificationId,
+    #[serde(rename = "type")]
+    pub kind: NotificationKind,
+    pub reason: Option<String>,
+    pub read_at: Option<Timestamp>,
+    pub created_at: Timestamp,
+    pub actor: User,
+    #[serde(default)]
+    pub actors: Vec<User>,
+    pub actors_count: u32,
+    pub event_count: u32,
+    pub unread_count: u32,
+    pub commit: Option<Commit>,
+}
+
+/// A page of `GET /api/v1/notifications`, which marked every notification
+/// read at [`read_at`](Self::read_at).
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct NotificationPage {
+    #[serde(flatten)]
+    pub page: Page<NotificationGroup>,
+    /// When the request marked everything read.
+    pub read_at: Timestamp,
+}
+
+impl NotificationPage {
+    /// The groups that were unread until this request.
+    pub fn fresh(&self) -> impl Iterator<Item = &NotificationGroup> {
+        self.page
+            .items
+            .iter()
+            .filter(|group| group.read_at.is_some_and(|at| at >= self.read_at))
+    }
+}
+
+/// The signed-in user, as `GET /api/v1/me` gives it, with the unread count
+/// the web shows on Notifications. Reading it marks nothing read.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CurrentUser {
+    #[serde(rename = "data")]
+    pub user: User,
+    #[serde(rename = "unread_notifications_count")]
+    pub unread_notifications: u32,
+}
+
 /// A commit with the commits it replies to, oldest first, as
 /// `GET /api/v1/commits/{id}` gives it to a signed request.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -234,3 +301,6 @@ mod tests {
         assert_eq!(thread, round_trip);
     }
 }
+
+#[cfg(test)]
+mod notification_tests;

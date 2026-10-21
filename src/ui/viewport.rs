@@ -1,7 +1,6 @@
 use std::ops::Range;
 
 use super::selection::Selection;
-use crate::api::CommitId;
 
 /// A list's first visible line, independent of its selected commit.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -14,10 +13,10 @@ impl Viewport {
         self.top
     }
 
-    pub fn reconcile(
+    pub fn reconcile<I: Copy + Eq>(
         &mut self,
-        entries: &[(CommitId, usize)],
-        selected: Option<CommitId>,
+        entries: &[(I, usize)],
+        selected: Option<I>,
         height: u16,
     ) {
         if height == 0 {
@@ -38,10 +37,10 @@ impl Viewport {
     }
 
     // Returns true when navigation, rather than scrolling within a commit, can request another page.
-    pub fn move_line(
+    pub fn move_line<I: Copy + Eq>(
         &mut self,
-        selection: &mut Selection,
-        entries: &[(CommitId, usize)],
+        selection: &mut Selection<I>,
+        entries: &[(I, usize)],
         height: u16,
         down: bool,
     ) -> bool {
@@ -85,9 +84,9 @@ impl Viewport {
     }
 }
 
-fn selected_range(
-    entries: &[(CommitId, usize)],
-    selected: Option<CommitId>,
+fn selected_range<I: Copy + Eq>(
+    entries: &[(I, usize)],
+    selected: Option<I>,
 ) -> Option<Range<usize>> {
     entries
         .iter()

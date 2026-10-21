@@ -6,8 +6,8 @@ use std::time::Duration;
 use url::Url;
 
 use super::{
-    ApiError, Commit, CommitEntry, CommitId, Cursor, DeviceApproval, DeviceKey, LogKind, NewCommit,
-    Page, Thread, User,
+    ApiError, Commit, CommitEntry, CommitId, CurrentUser, Cursor, DeviceApproval, DeviceKey,
+    LogKind, NewCommit, NotificationPage, Page, Thread, User,
 };
 
 /// The /dev/null site to talk to.
@@ -95,8 +95,18 @@ impl Client {
         &self.base
     }
 
-    pub async fn me(&self) -> Result<User, ApiError> {
-        self.data("GET", "/api/v1/me", None).await
+    pub async fn me(&self) -> Result<CurrentUser, ApiError> {
+        self.request("GET", "/api/v1/me", None, None).await
+    }
+
+    /// A page of notification groups, newest first, unfiltered. As on the web,
+    /// this marks every notification as read.
+    pub async fn notifications(
+        &self,
+        cursor: Option<&Cursor>,
+    ) -> Result<NotificationPage, ApiError> {
+        self.request("GET", "/api/v1/notifications", cursor, None)
+            .await
     }
 
     /// A page of a log, newest first, or ranked for

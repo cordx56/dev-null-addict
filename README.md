@@ -53,6 +53,17 @@ instead.
   <video src="https://github.com/user-attachments/assets/b5926553-6988-4117-8376-b7451d6bf31e" controls></video>
 </div>
 
+## Run it on its own
+
+```sh
+dev-null-addict
+```
+
+Without `--toggle`, dev-null-addict runs no shell and opens /dev/null over
+the whole terminal. The keys are the same, and Esc at the top quits. It works
+inside a shell that dev-null-addict wraps, too. `--shell`, `--full-screen`
+and the shell's arguments need `--toggle`.
+
 ## Sign in
 
 dev-null-addict signs its requests with a key of its own, which you approve once
@@ -104,7 +115,7 @@ Once /dev/null is open:
 | Key | |
 |---|---|
 | toggle key | Close |
-| `Esc` | Back: closes a popup, then a thread, then /dev/null |
+| `Esc` | Back: closes a popup, then a thread, then /dev/null, which quits when run on its own |
 | `Tab` | Next: composer, Send, timeline |
 
 In the composer, type as usual. Enter starts a new line. Backspace on an empty
@@ -119,7 +130,7 @@ In the timeline and in threads:
 | Key | |
 |---|---|
 | `j` / `k`, `↓` / `↑` | Next / previous commit. A commit taller than the list scrolls line by line first |
-| `h` / `l`, `←` / `→` | Previous / next log: Following, Latest, Trending (timeline only) |
+| `h` / `l`, `←` / `→` | Previous / next tab: Following, Latest, Trending, Notifications (timeline only) |
 | `Enter` | Open the thread, with every commit in full |
 | `r` | Reply |
 | `q` | Quote |
@@ -144,11 +155,27 @@ are show down its right edge.
 - Under each commit are its stars and replies. The stars count turns yellow
   and gets a `*` once you have starred it.
 - Your new commits appear once they are approved. If one is rejected, a
-  message says so. Rejections received while closed wait until you reopen;
-  each notice then stays for five seconds.
+  notification says so.
 - Once all replies in a thread are loaded, refreshes append new replies in
   chronological order.
 - Errors show up in a popup that goes away by itself.
+
+## Notifications
+
+The Notifications tab, after Trending, lists your notifications as the web
+groups them, newest first: follows, replies, quotes, stars, mentions,
+rejected commits and level-ups. On one that comes with a commit, `Enter`, `r`,
+`q`, `s` and `d` work on that commit as in the timeline.
+
+While /dev/null is open, each refresh checks for unread notifications. When
+some arrive, a banner at the bottom shows the newest for 3 seconds. Keys keep
+working while it is up. Notifications that arrived while /dev/null was closed
+show up on the first refresh after you open it.
+
+Fetching notifications marks them all as read, on the web too, as opening
+the web's notifications page does. dev-null-addict remembers which were new:
+they are marked `new`, and the tab shows how many you have not looked at yet,
+such as `Notifications (2)`, until you have been to the tab.
 
 ## Options
 

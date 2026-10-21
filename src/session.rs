@@ -55,7 +55,10 @@ mod input_queue;
 mod overlay;
 mod pending;
 mod requests;
+mod standalone;
 mod startup;
+
+pub use standalone::{StandaloneExit, run_standalone};
 
 use std::fmt;
 use std::io;
@@ -75,19 +78,25 @@ use self::overlay::Overlay;
 /// background jobs or its last writes left in the PTY.
 pub const DRAIN_TIMEOUT: Duration = Duration::from_millis(100);
 
+/// What the timeline needs, inside the wrapper or on its own.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClientOptions {
+    /// The device key. It is read when the overlay first needs it, so that a
+    /// `login` in another shell takes effect without restarting.
+    pub key_path: PathBuf,
+    pub base_url: BaseUrl,
+    /// The tab shown first.
+    pub log: LogKind,
+    pub refresh_interval: RefreshInterval,
+}
+
 /// What [`run`] needs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionOptions {
     pub toggle: ToggleKey,
     pub shell: ShellCommand,
-    /// The device key. It is read when the overlay first needs it, so that a
-    /// `login` in another shell takes effect without restarting.
-    pub key_path: PathBuf,
-    pub base_url: BaseUrl,
-    /// The tab the overlay starts on.
-    pub log: LogKind,
-    pub refresh_interval: RefreshInterval,
     pub layout: crate::OverlayLayout,
+    pub client: ClientOptions,
 }
 
 /// How often the open overlay refreshes. Nothing is fetched while it is

@@ -5,6 +5,9 @@ use ratatui::{Frame, Terminal};
 
 use crate::terminal::TermSize;
 
+/// Input and cursor modes shared by both timeline displays.
+pub(super) const UI_MODES: &[u8] = b"\x1b[>4;0m\x1b[?1l\x1b>\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1005l\x1b[?1006l\x1b[?2004h\x1b[0 q";
+
 /// The outer terminal's output. Everything the wrapper writes there goes
 /// through here: the shell's output while the overlay is closed, and the
 /// overlay's drawing.

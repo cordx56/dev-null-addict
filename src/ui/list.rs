@@ -11,24 +11,46 @@ pub enum Order {
     OldestFirst,
 }
 
-/// Commits loaded page by page, and the cursor of the page after the last
+pub trait Item: Clone {
+    type Id: Copy + Eq + std::fmt::Debug;
+    fn id(&self) -> Self::Id;
+    fn visible(&self) -> bool {
+        true
+    }
+}
+
+impl Item for CommitEntry {
+    type Id = CommitId;
+    fn id(&self) -> CommitId {
+        self.id()
+    }
+    fn visible(&self) -> bool {
+        match self {
+            Self::Live(commit) => commit.is_approved(),
+            Self::Deleted(_) => true,
+        }
+    }
+}
+
+/// A commit list hides pending and rejected entries until they are approved.
+pub type CommitList = List<CommitEntry>;
+
+/// Items loaded page by page, and the cursor of the page after the last
 /// one.
-///
-/// The user's own commits that are pending or rejected are left out, so that
-/// they show up once approved.
+/// Visibility is supplied by the item type.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CommitList {
+pub struct List<T: Item> {
     order: Order,
-    entries: Vec<CommitEntry>,
+    entries: Vec<T>,
     next_cursor: Option<Cursor>,
     loaded: bool,
     loading_more: bool,
-    first_page: Vec<CommitId>,
+    first_page: Vec<T::Id>,
     paged: bool,
-    newest: Vec<CommitEntry>,
+    newest: Vec<T>,
 }
 
-impl CommitList {
+impl<T: Item> List<T> {
     pub fn new(order: Order) -> Self {
         Self {
             order,
@@ -51,13 +73,13 @@ impl CommitList {
     /// - [`Order::OldestFirst`]: commits already there are updated in place.
     ///   New ones are added at the end once every page is loaded, and are
     ///   left for the next pages otherwise.
-    pub fn refresh(&mut self, page: Page<CommitEntry>) {
-        let first_page: Vec<_> = page.items.iter().map(CommitEntry::id).collect();
+    pub fn refresh(&mut self, page: Page<T>) {
+        let first_page: Vec<_> = page.items.iter().map(Item::id).collect();
         let old_loaded = self.loaded;
         let all_loaded = self.loaded && self.next_cursor.is_none();
         let mut new = Vec::new();
         for entry in page.items {
-            if !visible(&entry) {
+            if !entry.visible() {
                 self.remove(entry.id());
                 continue;
             }
@@ -99,7 +121,7 @@ impl CommitList {
 
     /// Collects newest-first pages until they overlap the loaded history, then
     /// appends the collected replies oldest first without reopening old pagination.
-    pub fn refresh_newest(&mut self, page: Page<CommitEntry>, first: bool) -> Option<Cursor> {
+    pub fn refresh_newest(&mut self, page: Page<T>, first: bool) -> Option<Cursor> {
         if first {
             self.newest.clear();
         }
@@ -112,7 +134,7 @@ impl CommitList {
             return page.next_cursor;
         }
         for entry in std::mem::take(&mut self.newest).into_iter().rev() {
-            if !visible(&entry) {
+            if !entry.visible() {
                 self.remove(entry.id());
             } else if let Some(old) = self.entries.iter_mut().find(|old| old.id() == entry.id()) {
                 *old = entry;
@@ -124,7 +146,7 @@ impl CommitList {
     }
 
     /// Adds the next page at the end.
-    pub fn append(&mut self, page: Page<CommitEntry>) {
+    pub fn append(&mut self, page: Page<T>) {
         for entry in page.items {
             if let Some(existing) = self.entries.iter_mut().find(|e| e.id() == entry.id()) {
                 *existing = entry;
@@ -132,7 +154,7 @@ impl CommitList {
                 self.entries.push(entry);
             }
         }
-        self.entries.retain(visible);
+        self.entries.retain(Item::visible);
         self.next_cursor = page.next_cursor;
         self.loaded = true;
         self.paged = true;
@@ -140,19 +162,19 @@ impl CommitList {
     }
 
     /// Replaces a commit, after it was starred or unstarred.
-    pub fn update(&mut self, entry: CommitEntry) {
-        if !visible(&entry) {
+    pub fn update(&mut self, entry: T) {
+        if !entry.visible() {
             self.remove(entry.id());
         } else if let Some(existing) = self.entries.iter_mut().find(|e| e.id() == entry.id()) {
             *existing = entry;
         }
     }
 
-    pub fn remove(&mut self, id: CommitId) {
+    pub fn remove(&mut self, id: T::Id) {
         self.entries.retain(|e| e.id() != id);
     }
 
-    pub fn entries(&self) -> &[CommitEntry] {
+    pub fn entries(&self) -> &[T] {
         &self.entries
     }
 
@@ -178,19 +200,12 @@ impl CommitList {
     }
 }
 
-fn visible(entry: &CommitEntry) -> bool {
-    match entry {
-        CommitEntry::Live(commit) => commit.is_approved(),
-        CommitEntry::Deleted(_) => true,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::test_support::{commit, id, page};
     fn ids(list: &CommitList) -> Vec<CommitId> {
-        list.entries().iter().map(CommitEntry::id).collect()
+        list.entries().iter().map(Item::id).collect()
     }
 
     // A chronological refresh prepends only new entries and preserves later pages and their cursor.

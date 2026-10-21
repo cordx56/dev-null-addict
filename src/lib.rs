@@ -15,7 +15,10 @@ mod terminal;
 mod ui;
 
 pub use input::{ToggleKey, ToggleKeyError};
-pub use session::{RefreshInterval, RefreshIntervalError, SessionError, SessionOptions, run};
+pub use session::{
+    ClientOptions, RefreshInterval, RefreshIntervalError, SessionError, SessionOptions,
+    StandaloneExit, run, run_standalone,
+};
 pub use ui::layout::OverlayLayout;
 
 /// Set to a non-empty value, it keeps the wrapper from starting.

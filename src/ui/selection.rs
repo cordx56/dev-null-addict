@@ -6,19 +6,25 @@ use crate::api::CommitId;
 ///
 /// The ids are given in display order on every call, so that one selection
 /// can run over a list made of several parts, as a thread is.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub struct Selection {
-    id: Option<CommitId>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Selection<I = CommitId> {
+    id: Option<I>,
     index: usize,
 }
 
-impl Selection {
-    pub fn id(&self) -> Option<CommitId> {
+impl<I> Default for Selection<I> {
+    fn default() -> Self {
+        Self { id: None, index: 0 }
+    }
+}
+
+impl<I: Copy + Eq> Selection<I> {
+    pub fn id(&self) -> Option<I> {
         self.id
     }
 
     /// Selects `id` if it is in `ids`.
-    pub fn select(&mut self, ids: &[CommitId], id: CommitId) {
+    pub fn select(&mut self, ids: &[I], id: I) {
         if let Some(index) = ids.iter().position(|candidate| *candidate == id) {
             self.id = Some(id);
             self.index = index;
@@ -27,7 +33,7 @@ impl Selection {
 
     /// Moves to the next commit. Returns `false` when the selection is on the
     /// last one already, which is when the next page should be loaded.
-    pub fn next(&mut self, ids: &[CommitId]) -> bool {
+    pub fn next(&mut self, ids: &[I]) -> bool {
         self.reanchor(ids);
         if self.index + 1 < ids.len() {
             self.index += 1;
@@ -38,7 +44,7 @@ impl Selection {
         }
     }
 
-    pub fn prev(&mut self, ids: &[CommitId]) {
+    pub fn prev(&mut self, ids: &[I]) {
         self.reanchor(ids);
         self.index = self.index.saturating_sub(1);
         self.id = ids.get(self.index).copied();
@@ -47,7 +53,7 @@ impl Selection {
     /// After the list changed: stays on its commit if that is still in
     /// `ids`, else takes the one now at its old position or the last one,
     /// and the first one if nothing was selected.
-    pub fn reanchor(&mut self, ids: &[CommitId]) {
+    pub fn reanchor(&mut self, ids: &[I]) {
         self.index = self
             .id
             .and_then(|id| ids.iter().position(|candidate| *candidate == id))

@@ -4,7 +4,7 @@ use crate::test_support::{commit, id, page};
 
 fn app() -> App {
     let mut app = App::new(
-        "ctrl+g".parse().unwrap(),
+        Some("ctrl+g".parse().unwrap()),
         LogKind::Following,
         Duration::from_secs(5),
     );
@@ -15,10 +15,13 @@ fn ready(app: &mut App, now: Instant) {
     app.open(now);
     app.answer(
         Request::Me,
-        Ok(Response::User(User {
-            username: "someone".into(),
-            name: None,
-            lane: None,
+        Ok(Response::CurrentUser(CurrentUser {
+            user: crate::api::User {
+                username: "someone".into(),
+                name: None,
+                lane: None,
+            },
+            unread_notifications: 0,
         })),
         now,
     );
@@ -73,7 +76,7 @@ fn compose_focus_send_and_moderation() {
         now,
     );
     assert!(app.pending.is_empty());
-    assert!(matches!(&app.popup, Some(Popup::Toast {message, ..}) if message.contains("rejected")));
+    assert!(app.popup.is_none());
     app.tick(now + Popup::TOAST_TIME);
     assert!(app.popup.is_none());
 }
@@ -487,7 +490,7 @@ fn selection_and_counts_use_semantic_ansi_styles() {
 mod floating;
 mod scrolling;
 
-// A delayed rejection must receive its full display interval when the closed overlay reopens.
+// A delayed creation rejection must receive its full display interval when the overlay reopens.
 #[test]
 fn unseen_rejection_waits_for_reopening() {
     let mut app = app();
@@ -498,11 +501,11 @@ fn unseen_rejection_waits_for_reopening() {
     let mut rejected = commit(7);
     rejected.status = crate::api::CommitStatus::Rejected;
     app.answer(
-        Request::Moderation(id(7)),
-        Ok(Response::Thread(Thread {
-            ancestors: vec![],
-            commit: rejected,
-        })),
+        Request::Create(NewCommit {
+            body: crate::api::CommitBody::new("rejected body").unwrap(),
+            target: None,
+        }),
+        Ok(Response::Commit(rejected)),
         now,
     );
     let reopened = now + Duration::from_secs(60);
@@ -631,7 +634,7 @@ fn exhausted_replies_catch_up_from_newest_pages() {
     );
 }
 
-// Multiple unseen rejections must survive unrelated errors and be shown one at a time after reopening.
+// Multiple unseen creation rejections must survive unrelated errors and be shown one at a time after reopening.
 #[test]
 fn unseen_rejections_are_queued_behind_other_popups() {
     let mut app = app();
@@ -640,11 +643,11 @@ fn unseen_rejections_are_queued_behind_other_popups() {
         let mut rejected = commit(n);
         rejected.status = crate::api::CommitStatus::Rejected;
         app.answer(
-            Request::Moderation(id(n)),
-            Ok(Response::Thread(Thread {
-                ancestors: vec![],
-                commit: rejected,
-            })),
+            Request::Create(NewCommit {
+                body: crate::api::CommitBody::new("rejected body").unwrap(),
+                target: None,
+            }),
+            Ok(Response::Commit(rejected)),
             now,
         );
     }
@@ -652,10 +655,44 @@ fn unseen_rejections_are_queued_behind_other_popups() {
     let reopened = now + Duration::from_secs(60);
     app.open(reopened);
     assert!(
-        matches!(&app.popup, Some(Popup::Toast {message, until}) if message.contains("0000007") && *until == reopened + Popup::TOAST_TIME)
+        matches!(&app.popup, Some(Popup::Toast {message, until}) if message.contains("rejected") && *until == reopened + Popup::TOAST_TIME)
     );
     app.input(UiInput::Key(Key::Esc), reopened);
     assert!(
-        matches!(&app.popup, Some(Popup::Toast {message, until}) if message.contains("0000008") && *until == reopened + Popup::TOAST_TIME)
+        matches!(&app.popup, Some(Popup::Toast {message, until}) if message.contains("rejected") && *until == reopened + Popup::TOAST_TIME)
     );
 }
+
+// Standalone Esc closes only at the top, and every help context explains quitting without a toggle.
+#[test]
+fn standalone_escape_and_help() {
+    let now = Instant::now();
+    let mut app = App::new(None, LogKind::Following, Duration::from_secs(5));
+    ready(&mut app, now);
+    app.popup = Some(Popup::Toast {
+        message: "notice".to_owned(),
+        until: now + Duration::from_secs(5),
+    });
+    assert!(app.input(UiInput::Key(Key::Esc), now).is_empty());
+    assert!(app.opened);
+    assert_eq!(app.input(UiInput::Key(Key::Esc), now), vec![Effect::Close]);
+    assert!(!app.opened);
+    for context in [
+        help::HelpContext::Compose,
+        help::HelpContext::Send,
+        help::HelpContext::Timeline,
+        help::HelpContext::Thread,
+        help::HelpContext::ConfirmDelete,
+    ] {
+        let entries = help::entries(context, app.toggle);
+        assert!(entries.contains(&("Esc".to_owned(), "back / quit")));
+        assert_eq!(entries.iter().filter(|(key, _)| key == "Esc").count(), 1);
+        assert!(
+            !entries
+                .iter()
+                .any(|(key, action)| key.starts_with("ctrl+") || *action == "close")
+        );
+    }
+}
+
+mod notifications;

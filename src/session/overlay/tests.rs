@@ -6,14 +6,14 @@ use std::time::Duration;
 
 fn overlay(layout: crate::OverlayLayout, now: Instant, screen: &Vt100Screen) -> Overlay {
     let toggle = "ctrl+g".parse().unwrap();
-    let mut app = App::new(toggle, LogKind::Following, Duration::from_secs(5));
+    let mut app = App::new(Some(toggle), LogKind::Following, Duration::from_secs(5));
     app.set_layout(layout);
     app.resize(TermSize {
         cols: 100,
         rows: 30,
     });
     app.set_background(screen.text_rows());
-    let mut overlay = Overlay::new(app, KeyDecoder::new(toggle));
+    let mut overlay = Overlay::new(app, KeyDecoder::new(Some(toggle)));
     // Model the completed takeover without writing to the test runner's terminal.
     overlay.takeover = Some(Takeover {
         shell_buffer: Buffer::Main,
@@ -95,8 +95,8 @@ fn round_trip(setup: &[u8], hidden: &[u8], resized: bool) -> (Vt100Screen, Vt100
     outer.process(setup);
     let toggle = "ctrl+g".parse().unwrap();
     let mut overlay = Overlay::new(
-        App::new(toggle, LogKind::Following, Duration::from_secs(5)),
-        KeyDecoder::new(toggle),
+        App::new(Some(toggle), LogKind::Following, Duration::from_secs(5)),
+        KeyDecoder::new(Some(toggle)),
     );
     let mut display = Display::captured(size);
     overlay
@@ -131,8 +131,8 @@ fn replay_preserves_real_unsynchronized_cursor() {
     let model = Vt100Screen::new(size);
     let toggle = "ctrl+g".parse().unwrap();
     let mut overlay = Overlay::new(
-        App::new(toggle, LogKind::Following, Duration::from_secs(5)),
-        KeyDecoder::new(toggle),
+        App::new(Some(toggle), LogKind::Following, Duration::from_secs(5)),
+        KeyDecoder::new(Some(toggle)),
     );
     let mut display = Display::captured(size);
     overlay.open(&mut display, &model, Instant::now()).unwrap();
@@ -201,8 +201,8 @@ fn replay_does_not_repaint_unsynchronized_wrap_cursor() {
     let cursor = outer.answer(crate::screen::QueryKind::CursorPosition, b"\x1b[6n");
     let toggle = "ctrl+g".parse().unwrap();
     let mut overlay = Overlay::new(
-        App::new(toggle, LogKind::Following, Duration::from_secs(5)),
-        KeyDecoder::new(toggle),
+        App::new(Some(toggle), LogKind::Following, Duration::from_secs(5)),
+        KeyDecoder::new(Some(toggle)),
     );
     let mut display = Display::captured(size);
     overlay.open(&mut display, &model, Instant::now()).unwrap();

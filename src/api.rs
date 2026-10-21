@@ -13,9 +13,9 @@ mod signing;
 pub use body::{CommitBody, CommitBodyError, CommitTarget, NewCommit};
 pub use client::{BaseUrl, BaseUrlError, Client};
 pub use error::{ApiError, ErrorCode};
-pub use id::{CommitId, Cursor, LogKind, LogKindError, ShortHash, Username};
+pub use id::{CommitId, Cursor, LogKind, LogKindError, NotificationId, ShortHash, Username};
 pub use model::{
-    Commit, CommitEntry, CommitStatus, DeletedCommit, DeviceApproval, Image, Lane, Page, Thread,
-    User,
+    Commit, CommitEntry, CommitStatus, CurrentUser, DeletedCommit, DeviceApproval, Image, Lane,
+    NotificationGroup, NotificationKind, NotificationPage, Page, Thread, User,
 };
 pub use signing::{DeviceKey, Fingerprint, KeyError, SignError, SignedHeaders};

@@ -115,7 +115,8 @@ impl Overlay {
             })?;
         }
         display.write(crate::screen::BASELINE)?;
-        display.write(b"\x1b[=0u\x1b[>4;0m\x1b[?1l\x1b>\x1b[?9l\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1004l\x1b[?1005l\x1b[?1006l\x1b[?2004h\x1b[0 q")?;
+        display.write(b"\x1b[=0u")?;
+        display.write(super::display::UI_MODES)?;
         display.take_over()?;
         self.app.resize(display.size());
         if self.app.floating() {

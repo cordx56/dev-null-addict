@@ -4,7 +4,7 @@ use super::*;
 #[test]
 fn float_geometry_and_help_thresholds() {
     let mut app = App::new(
-        "ctrl+g".parse().unwrap(),
+        Some("ctrl+g".parse().unwrap()),
         LogKind::Following,
         Duration::from_secs(5),
     );
@@ -46,7 +46,7 @@ fn shell_background_is_plain_and_window_is_opaque() {
     use crate::screen::{ScreenModel, Vt100Screen};
     use ratatui::style::{Color, Modifier};
     let mut app = App::new(
-        "ctrl+g".parse().unwrap(),
+        Some("ctrl+g".parse().unwrap()),
         LogKind::Following,
         Duration::from_secs(5),
     );

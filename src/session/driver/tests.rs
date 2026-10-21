@@ -15,8 +15,8 @@ fn driver() -> Driver {
         queue: InputQueue::default(),
         requests,
         overlay: Overlay::new(
-            App::new(toggle, LogKind::Following, Duration::from_secs(5)),
-            KeyDecoder::new(toggle),
+            App::new(Some(toggle), LogKind::Following, Duration::from_secs(5)),
+            KeyDecoder::new(Some(toggle)),
         ),
         screen: Vt100Screen::new(size),
         framer: OutputFramer::new(),

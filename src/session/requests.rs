@@ -88,11 +88,15 @@ impl Requests {
 
 async fn execute(client: &Client, request: &Request) -> Result<Response, crate::api::ApiError> {
     match request {
-        Request::Me => client.me().await.map(Response::User),
+        Request::Me => client.me().await.map(Response::CurrentUser),
         Request::Log { kind, cursor } => client
             .log(*kind, cursor.as_ref())
             .await
             .map(Response::Entries),
+        Request::Notifications { cursor } => client
+            .notifications(cursor.as_ref())
+            .await
+            .map(Response::Notifications),
         Request::Thread(id) | Request::Moderation(id) => {
             client.thread(*id).await.map(Response::Thread)
         }

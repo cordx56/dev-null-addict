@@ -9,7 +9,10 @@ use clap::{Args, Parser, Subcommand};
 use dev_null_addict::api::{BaseUrl, KeyError, LogKind};
 use dev_null_addict::init::{InitShell, Startup};
 use dev_null_addict::shell::ShellCommand;
-use dev_null_addict::{DISABLE_ENV, RefreshInterval, SessionError, SessionOptions, ToggleKey};
+use dev_null_addict::{
+    ClientOptions, DISABLE_ENV, RefreshInterval, SessionError, SessionOptions, StandaloneExit,
+    ToggleKey,
+};
 use url::Url;
 
 const TOGGLE_HELP: &str = "\
@@ -24,7 +27,11 @@ to send it to the shell instead.
 The key is recognised however the terminal sends it: as a control byte, in the
 kitty keyboard protocol, or with xterm's modifyOtherKeys. It is ignored inside a
 bracketed paste. A program that has not turned bracketed paste on gets pasted
-text as typed keys, so a pasted control character can still toggle.";
+text as typed keys, so a pasted control character can still toggle.
+
+Without --toggle, no shell is run: the timeline opens on its own over the
+whole screen, and Esc at the top quits. --shell, --full-screen and SHELL_ARGS
+need --toggle.";
 
 const INIT_HELP: &str = "\
 Print the snippet that starts dev-null-addict from a shell's startup file.
@@ -52,8 +59,11 @@ or of ~/.config/fish/config.fish:
 The shell inside gets NO_DEV_NULL_ADDICT=1, so the snippet does nothing there.
 Set NO_DEV_NULL_ADDICT yourself to skip it for a shell.
 
-If dev-null-addict can't start, it prints why and runs the shell without itself.
+If the wrapper can't start, it prints why and runs the shell without itself.
 When the shell exits, dev-null-addict exits with its exit code.
+
+Without --toggle, the timeline opens on its own over the whole screen, and Esc
+at the top quits.
 
 Sign in once with `dev-null-addict login`.";
 
@@ -86,16 +96,16 @@ enum Command {
 #[derive(Debug, PartialEq, Eq, Args)]
 struct RunArgs {
     /// Open over the whole screen instead of in a window
-    #[arg(long)]
+    #[arg(long, requires = "toggle")]
     full_screen: bool,
 
     /// Key that opens and closes the timeline: ctrl+a to ctrl+z, except
-    /// ctrl+h, ctrl+i and ctrl+m
-    #[arg(long, value_name = "KEY", required = true, long_help = TOGGLE_HELP)]
+    /// ctrl+h, ctrl+i and ctrl+m; without it, the timeline runs on its own
+    #[arg(long, value_name = "KEY", long_help = TOGGLE_HELP)]
     toggle: Option<ToggleKey>,
 
     /// Shell to run [default: $SHELL, else /bin/sh]
-    #[arg(long, value_name = "PATH")]
+    #[arg(long, value_name = "PATH", requires = "toggle")]
     shell: Option<PathBuf>,
 
     /// Log to show first: following, latest or trending
@@ -110,7 +120,7 @@ struct RunArgs {
     account: AccountArgs,
 
     /// Arguments for the shell
-    #[arg(last = true, value_name = "SHELL_ARGS")]
+    #[arg(last = true, value_name = "SHELL_ARGS", requires = "toggle")]
     shell_args: Vec<OsString>,
 }
 
@@ -128,7 +138,7 @@ struct AccountArgs {
 #[derive(Debug, Args)]
 struct InitArgs {
     /// sh (for bash, zsh and other POSIX shells) or fish
-    #[arg(id = "init_shell", value_name = "SHELL")]
+    #[arg(id = "init_shell", value_name = "SHELL", requires = "toggle")]
     shell: InitShell,
 
     /// What the snippet starts dev-null-addict with
@@ -168,10 +178,9 @@ enum StartError {
 
 /// Parses the command line and runs the command.
 ///
-/// `--help` and `--version` print and exit. A mistake on the command line of
-/// `login` or `init` exits as clap does. Any other mistake is a failure to
-/// start, and ends in [`fall_back`] with the shell from
-/// [`ShellCommand::from_env`].
+/// Without `--toggle`, runs the standalone timeline. With it, runs the wrapper
+/// and falls back to the shell on failure. Parse errors fall back only when
+/// `--toggle` occurs before `--`; help, version, login and init exit as clap does.
 fn main() -> ExitCode {
     let argv: Vec<_> = std::env::args_os().collect();
     match Cli::try_parse_from(&argv) {
@@ -183,7 +192,8 @@ fn main() -> ExitCode {
             command: Some(Command::Init(args)),
             ..
         }) => init(args),
-        Ok(cli) => wrap(cli.run),
+        Ok(cli) if cli.run.toggle.is_some() => wrap(cli.run),
+        Ok(cli) => standalone(cli.run),
         Err(error) => {
             if matches!(
                 error.kind(),
@@ -191,9 +201,10 @@ fn main() -> ExitCode {
             ) {
                 let _ = error.print();
                 ExitCode::SUCCESS
-            } else if argv
-                .get(1)
-                .is_some_and(|arg| arg == "login" || arg == "init")
+            } else if !has_toggle(&argv)
+                || argv
+                    .get(1)
+                    .is_some_and(|arg| arg == "login" || arg == "init")
             {
                 let _ = error.print();
                 ExitCode::from(2)
@@ -203,6 +214,35 @@ fn main() -> ExitCode {
                     &StartError::Args(error),
                 )
             }
+        }
+    }
+}
+
+fn has_toggle(argv: &[OsString]) -> bool {
+    argv.iter()
+        .skip(1)
+        .take_while(|arg| *arg != "--")
+        .any(|arg| arg == "--toggle" || arg.as_encoded_bytes().starts_with(b"--toggle="))
+}
+
+fn standalone(args: RunArgs) -> ExitCode {
+    let result = std::panic::catch_unwind(|| -> Result<_, StartError> {
+        let options = client_options(args.account, args.log, args.refresh_interval)?;
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(StartError::Runtime)?;
+        runtime
+            .block_on(dev_null_addict::run_standalone(options))
+            .map_err(StartError::from)
+    })
+    .unwrap_or(Err(StartError::Panicked));
+    match result {
+        Ok(StandaloneExit::Quit) => ExitCode::SUCCESS,
+        Ok(StandaloneExit::Signal(signal)) => ExitCode::from((128 + signal) as u8),
+        Err(error) => {
+            eprintln!("dev-null-addict: {error}");
+            ExitCode::FAILURE
         }
     }
 }
@@ -241,7 +281,7 @@ fn wrap(args: RunArgs) -> ExitCode {
 /// Prints why the wrapper did not run, and becomes [`recovery_shell`].
 /// Returns only if that fails, or if there is no shell to become.
 ///
-/// This is the only way out of a failed start, whatever failed.
+/// This is the recovery path for a failed wrapper start.
 fn fall_back(shell: &ShellCommand, error: &StartError) -> ExitCode {
     eprintln!("dev-null-addict: {error}");
     if let Some(shell) = recovery_shell(shell) {
@@ -426,13 +466,22 @@ fn session_options(args: RunArgs) -> Result<SessionOptions, KeyError> {
         },
         toggle: args.toggle.expect("clap requires --toggle for the wrapper"),
         shell,
-        key_path: args
-            .account
+        client: client_options(args.account, args.log, args.refresh_interval)?,
+    })
+}
+
+fn client_options(
+    account: AccountArgs,
+    log: LogKind,
+    refresh_interval: RefreshInterval,
+) -> Result<ClientOptions, KeyError> {
+    Ok(ClientOptions {
+        key_path: account
             .key
             .map_or_else(dev_null_addict::api::DeviceKey::default_path, Ok)?,
-        base_url: args.account.api_url,
-        log: args.log,
-        refresh_interval: args.refresh_interval,
+        base_url: account.api_url,
+        log,
+        refresh_interval,
     })
 }
 
@@ -442,13 +491,61 @@ mod tests {
 
     use super::Cli;
 
-    // The required --toggle, the login subcommand and the trailing shell
-    // arguments only work together with the settings on `Cli`; clap checks
-    // that here rather than at the first run.
+    // Guard clap relationships across standalone, wrapper and subcommand arguments.
     #[test]
     fn command_line_is_consistent() {
         Cli::command().debug_assert();
     }
+    // Standalone defaults must round-trip without accidentally enabling the wrapper.
+    #[test]
+    fn no_arguments_select_standalone() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["dev-null-addict"]).unwrap();
+        assert!(cli.command.is_none());
+        assert!(cli.run.toggle.is_none());
+        assert!(super::run_args(&cli.run).is_empty());
+    }
+
+    // Wrapper-only arguments and init must never silently start a standalone UI.
+    #[test]
+    fn wrapper_arguments_require_toggle() {
+        use clap::Parser;
+        for args in [
+            vec!["--shell", "/bin/sh"],
+            vec!["--full-screen"],
+            vec!["--", "args"],
+            vec!["init", "sh"],
+        ] {
+            let error =
+                Cli::try_parse_from(std::iter::once("dev-null-addict").chain(args)).unwrap_err();
+            assert_eq!(
+                error.kind(),
+                clap::error::ErrorKind::MissingRequiredArgument
+            );
+            assert_eq!(error.exit_code(), 2);
+            assert!(error.to_string().contains("--toggle"));
+        }
+    }
+
+    // Only an explicit wrapper option before the shell boundary authorizes fallback.
+    #[test]
+    fn fallback_toggle_respects_argument_boundary() {
+        for (args, expected) in [
+            (vec!["--toggle", "ctrl+g", "--", "args"], true),
+            (vec!["--", "--toggle", "ctrl+g"], false),
+            (vec!["--toggle=ctrl+g"], true),
+            (vec!["--", "--toggle=ctrl+g"], false),
+            (vec!["--toggle-extra=ctrl+g"], false),
+            (vec!["--key", "missing"], false),
+        ] {
+            let argv = std::iter::once("dev-null-addict")
+                .chain(args)
+                .map(std::ffi::OsString::from)
+                .collect::<Vec<_>>();
+            assert_eq!(super::has_toggle(&argv), expected, "{argv:?}");
+        }
+    }
+
     // Serializing parsed options must preserve paths and trailing arguments while omitting defaults.
     #[test]
     fn wrapper_options_round_trip() {

@@ -17,9 +17,13 @@ pub enum HelpContext {
 }
 
 /// The keys that do something in `context`, as (key, what it does), such as
-/// `("d", "delete")`. The toggle key is shown as it was given.
-pub fn entries(context: HelpContext, toggle: ToggleKey) -> Vec<(String, &'static str)> {
-    let mut entries = vec![(toggle.to_string(), "close"), ("Esc".to_owned(), "back")];
+/// `("d", "delete")`. The toggle key is shown as it was given. Without one,
+/// as on its own, Esc's line says that it also quits.
+pub fn entries(context: HelpContext, toggle: Option<ToggleKey>) -> Vec<(String, &'static str)> {
+    let mut entries = match toggle {
+        Some(toggle) => vec![(toggle.to_string(), "close"), ("Esc".to_owned(), "back")],
+        None => vec![("Esc".to_owned(), "back / quit")],
+    };
     let keys: &[(&str, &str)] = match context {
         HelpContext::Compose => &[
             ("Tab", "next focus"),
@@ -30,7 +34,7 @@ pub fn entries(context: HelpContext, toggle: ToggleKey) -> Vec<(String, &'static
         HelpContext::Timeline => &[
             ("Tab", "composer"),
             ("j / k", "next / previous"),
-            ("h / l", "switch log"),
+            ("h / l", "switch tab"),
             ("Enter", "open thread"),
             ("r", "reply"),
             ("q", "quote"),

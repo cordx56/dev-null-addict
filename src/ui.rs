@@ -5,15 +5,18 @@
 //! ticks, and returns [`Effect`]s for the session to carry out, so it can be
 //! tested on its own.
 
+mod banner;
 mod compose;
 mod format;
 mod help;
 pub(crate) mod layout;
 mod list;
 mod navigation;
+mod notifications;
 mod popup;
 mod render;
 mod selection;
+mod tab;
 mod theme;
 mod thread;
 mod timeline;
@@ -24,13 +27,16 @@ use std::time::{Duration, Instant};
 use ratatui::Frame;
 
 use crate::api::{
-    ApiError, Commit, CommitEntry, CommitId, Cursor, KeyError, LogKind, NewCommit, Page, Thread,
-    User, Username,
+    ApiError, Commit, CommitEntry, CommitId, CurrentUser, Cursor, KeyError, LogKind, NewCommit,
+    NotificationPage, Page, Thread, Username,
 };
 use crate::input::{ToggleKey, UiInput};
 
+use self::banner::Banner;
 use self::compose::Compose;
+use self::notifications::Notifications;
 use self::popup::{Notice, Popup};
+pub use self::tab::Tab;
 use self::thread::ThreadView;
 use self::timeline::Timeline;
 
@@ -40,11 +46,13 @@ use self::timeline::Timeline;
 /// threads stay when the overlay closes and opens again.
 #[derive(Debug)]
 pub struct App {
-    toggle: ToggleKey,
+    toggle: Option<ToggleKey>,
     refresh_interval: Duration,
     focus: Focus,
     compose: Compose,
     timeline: Timeline,
+    notifications: Notifications,
+    banner: Option<Banner>,
     /// Threads opened with Enter, innermost last. Esc closes the last one.
     threads: Vec<ThreadView>,
     popup: Option<Popup>,
@@ -93,6 +101,9 @@ pub enum Request {
         kind: LogKind,
         cursor: Option<Cursor>,
     },
+    Notifications {
+        cursor: Option<Cursor>,
+    },
     Thread(CommitId),
     Replies {
         id: CommitId,
@@ -115,7 +126,8 @@ pub enum Request {
 /// The answer to a [`Request`], by what it carries.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Response {
-    User(User),
+    CurrentUser(CurrentUser),
+    Notifications(NotificationPage),
     Entries(Page<CommitEntry>),
     Thread(Thread),
     Commit(Commit),
@@ -146,13 +158,15 @@ impl From<KeyError> for Failure {
 }
 
 impl App {
-    pub fn new(toggle: ToggleKey, log: LogKind, refresh_interval: Duration) -> Self {
+    pub fn new(toggle: Option<ToggleKey>, log: LogKind, refresh_interval: Duration) -> Self {
         Self {
             toggle,
             refresh_interval,
             focus: Focus::Compose,
             compose: Compose::new(),
             timeline: Timeline::new(log),
+            notifications: Notifications::new(),
+            banner: None,
             threads: Vec::new(),
             popup: None,
             moderation_notices: std::collections::VecDeque::new(),
@@ -186,6 +200,9 @@ impl App {
     /// else the overlay. The toggle key always closes the overlay.
     pub fn input(&mut self, input: UiInput, now: Instant) -> Vec<Effect> {
         let effects = self.handle_input(input, now);
+        if effects.contains(&Effect::Close) && self.timeline.active() == Tab::Notifications {
+            self.notifications.new.clear();
+        }
         self.show_moderation_notice(now);
         self.sync_viewport();
         effects
@@ -271,6 +288,9 @@ impl App {
         {
             self.timeline.tab_mut(*kind).list.more_done();
         }
+        if matches!(&request, Request::Notifications { cursor: Some(_) }) {
+            self.notifications.tab.list.more_done();
+        }
         if let Request::Replies {
             id,
             cursor: Some(_),
@@ -315,7 +335,21 @@ impl App {
             }
         };
         match (request, response) {
-            (Request::Me, Response::User(user)) => self.me = Some(user.username),
+            (Request::Me, Response::CurrentUser(current)) => {
+                self.me = Some(current.user.username);
+                if current.unread_notifications > 0 && self.timeline.active() != Tab::Notifications
+                {
+                    return self.queue(vec![Request::Notifications { cursor: None }]);
+                }
+            }
+            (Request::Notifications { cursor }, Response::Notifications(page)) => {
+                if let Some(text) = self.notifications.receive(page, cursor.is_some()) {
+                    self.banner = Some(Banner {
+                        text,
+                        until: now + Banner::TIME,
+                    });
+                }
+            }
             (Request::Log { kind, cursor }, Response::Entries(page)) => {
                 let tab = self.timeline.tab_mut(kind);
                 if cursor.is_some() {
@@ -381,8 +415,6 @@ impl App {
                 }
                 crate::api::CommitStatus::Rejected => {
                     self.pending.retain(|p| *p != id);
-                    self.moderation_notices
-                        .push_back(format!("Commit {} was rejected.", thread.commit.short_hash));
                 }
             },
             (Request::Star { .. }, Response::Commit(commit)) => {
@@ -403,6 +435,7 @@ impl App {
                 for view in &mut self.threads {
                     view.remove(id);
                 }
+                self.notifications.change_commit(id, None);
                 self.pending.retain(|p| *p != id);
             }
             _ => {}
@@ -413,6 +446,13 @@ impl App {
     /// Refreshes what is shown and checks pending commits when the interval
     /// is up, and drops popups whose time is over.
     pub fn tick(&mut self, now: Instant) -> Vec<Effect> {
+        if self
+            .banner
+            .as_ref()
+            .is_some_and(|banner| now >= banner.until)
+        {
+            self.banner = None;
+        }
         if matches!(self.popup, Some(Popup::Toast {until, ..}) if now >= until) {
             self.popup = None;
         }
@@ -436,7 +476,11 @@ impl App {
             Some(Popup::Toast { until, .. }) => Some(until),
             _ => None,
         };
-        self.next_refresh.into_iter().chain(popup).min()
+        self.next_refresh
+            .into_iter()
+            .chain(popup)
+            .chain(self.banner.as_ref().map(|banner| banner.until))
+            .min()
     }
 
     pub fn render(&self, frame: &mut Frame<'_>, now: jiff::Timestamp) {
@@ -480,13 +524,13 @@ impl App {
         if self.backoff_until.is_some_and(|t| t > now) {
             return Vec::new();
         }
-        let mut requests = vec![Request::Log {
-            kind: self.timeline.active(),
-            cursor: None,
-        }];
-        if self.me.is_none() || self.notice.is_some() {
-            requests.insert(0, Request::Me);
-        }
+        let mut requests = vec![
+            Request::Me,
+            match self.timeline.active() {
+                Tab::Log(kind) => Request::Log { kind, cursor: None },
+                Tab::Notifications => Request::Notifications { cursor: None },
+            },
+        ];
         if let Some(view) = self.threads.last() {
             requests.push(Request::Thread(view.id()));
             requests.push(if view.replies().exhausted() {
@@ -505,20 +549,32 @@ impl App {
         self.queue(requests)
     }
 
-    fn selected(&self) -> Option<&CommitEntry> {
-        if let Some(view) = self.threads.last() {
-            view.entries()
-                .find(|e| Some(e.id()) == view.selection().id())
-        } else {
-            let tab = self.timeline.tab(self.timeline.active());
+    fn selected(&self) -> Option<CommitEntry> {
+        if self.showing_notifications() {
+            let tab = &self.notifications.tab;
             tab.list
                 .entries()
                 .iter()
-                .find(|e| Some(e.id()) == tab.selection.id())
+                .find(|group| Some(group.id) == tab.selection.id())
+                .and_then(|group| group.commit.as_ref())
+                .map(|commit| CommitEntry::Live(Box::new(commit.clone())))
+        } else {
+            let selected = self.selection().id();
+            self.list_entries()
+                .into_iter()
+                .find(|entry| Some(entry.id()) == selected)
+                .cloned()
         }
     }
 
     fn update_commit(&mut self, entry: CommitEntry) {
+        self.notifications.change_commit(
+            entry.id(),
+            match &entry {
+                CommitEntry::Live(commit) => Some(commit.as_ref()),
+                CommitEntry::Deleted(_) => None,
+            },
+        );
         for kind in LogKind::ALL {
             self.timeline.tab_mut(kind).list.update(entry.clone());
         }
@@ -540,13 +596,16 @@ impl App {
                 Key::Right | Key::Char('l') => self.timeline.active().next(),
                 _ => None,
             };
-            if let Some(kind) = kind
-                && self.timeline.switch(kind)
-            {
-                return self.refresh(now);
+            if let Some(kind) = kind {
+                if self.timeline.active() == Tab::Notifications {
+                    self.notifications.new.clear();
+                }
+                if self.timeline.switch(kind) {
+                    return self.refresh(now);
+                }
             }
         }
-        let Some(entry) = self.selected().cloned() else {
+        let Some(entry) = self.selected() else {
             return Vec::new();
         };
         if key == Key::Enter {

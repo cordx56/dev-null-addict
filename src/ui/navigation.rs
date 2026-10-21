@@ -1,9 +1,23 @@
 use crate::api::CommitEntry;
 use crate::terminal::TermSize;
 
-use super::{App, Effect, Request, layout, render, selection::Selection};
+use super::{App, Effect, Request, Tab, layout, render, selection::Selection};
 
 impl App {
+    pub(super) fn showing_notifications(&self) -> bool {
+        self.threads.is_empty() && self.timeline.active() == Tab::Notifications
+    }
+
+    fn notification_heights(&self, width: u16) -> Vec<(crate::api::NotificationId, usize)> {
+        self.notifications
+            .tab
+            .list
+            .entries()
+            .iter()
+            .map(|group| (group.id, render::notification_height(group, width)))
+            .collect()
+    }
+
     pub(crate) fn set_layout(&mut self, layout: layout::OverlayLayout) {
         self.layout = layout;
         self.sync_viewport();
@@ -18,8 +32,16 @@ impl App {
     }
 
     pub(super) fn viewport(&self) -> &super::viewport::Viewport {
+        if self.showing_notifications() {
+            return &self.notifications.tab.viewport;
+        }
         self.threads.last().map_or_else(
-            || &self.timeline.tab(self.timeline.active()).viewport,
+            || {
+                &self
+                    .timeline
+                    .tab(self.timeline.active_log().expect("log viewport"))
+                    .viewport
+            },
             |view| &view.viewport,
         )
     }
@@ -29,12 +51,22 @@ impl App {
         if area.is_empty() {
             return;
         }
+        if self.showing_notifications() {
+            let entries = self.notification_heights(area.width);
+            let tab = &mut self.notifications.tab;
+            tab.viewport
+                .reconcile(&entries, tab.selection.id(), area.height);
+            return;
+        }
         let entries = self.entry_heights(area.width);
         let selected = self.selection().id();
         let viewport = if let Some(view) = self.threads.last_mut() {
             &mut view.viewport
         } else {
-            &mut self.timeline.tab_mut(self.timeline.active()).viewport
+            &mut self
+                .timeline
+                .tab_mut(self.timeline.active_log().expect("log viewport"))
+                .viewport
         };
         viewport.reconcile(&entries, selected, area.height);
     }
@@ -56,7 +88,7 @@ impl App {
         self.threads.last().map_or_else(
             || {
                 self.timeline
-                    .tab(self.timeline.active())
+                    .tab(self.timeline.active_log().expect("commit list"))
                     .list
                     .entries()
                     .iter()
@@ -68,7 +100,12 @@ impl App {
 
     pub(super) fn selection(&self) -> &Selection {
         self.threads.last().map_or_else(
-            || &self.timeline.tab(self.timeline.active()).selection,
+            || {
+                &self
+                    .timeline
+                    .tab(self.timeline.active_log().expect("commit list"))
+                    .selection
+            },
             |view| view.selection(),
         )
     }
@@ -77,6 +114,17 @@ impl App {
         let area = layout::areas(self, self.size).list;
         if area.is_empty() {
             return Vec::new();
+        }
+        if self.showing_notifications() {
+            let entries = self.notification_heights(area.width);
+            let request = self
+                .notifications
+                .tab
+                .navigate(&entries, area.height, down)
+                .map(|cursor| Request::Notifications {
+                    cursor: Some(cursor),
+                });
+            return self.queue(request.into_iter().collect());
         }
         let entries = self.entry_heights(area.width);
         let last = entries.last().map(|(id, _)| *id);
@@ -94,19 +142,14 @@ impl App {
                 None
             }
         } else {
-            let kind = self.timeline.active();
-            let tab = self.timeline.tab_mut(kind);
-            let navigate = tab
-                .viewport
-                .move_line(&mut tab.selection, &entries, area.height, down);
-            if navigate && down && tab.selection.id() == last {
-                tab.list.begin_more().map(|cursor| Request::Log {
+            let kind = self.timeline.active_log().expect("log navigation");
+            self.timeline
+                .tab_mut(kind)
+                .navigate(&entries, area.height, down)
+                .map(|cursor| Request::Log {
                     kind,
                     cursor: Some(cursor),
                 })
-            } else {
-                None
-            }
         };
         self.queue(request.into_iter().collect())
     }
