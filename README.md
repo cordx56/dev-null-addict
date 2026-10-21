@@ -4,7 +4,7 @@
   <p>
     <a href="https://dev-null.sh">/dev/null</a> over your shell, one key away.
   </p>
-  <img alt="Screen shot of dev-null-addict" src="dev-null-addict.png">
+  <img alt="Screen shot of dev-null-addict" src="docs/assets/dev-null-addict.png">
 </div>
 
 dev-null-addict runs your shell on a pseudo-terminal, as tmux does, and passes
@@ -49,22 +49,9 @@ given after the shell's name. Run it on its own to see the snippet. If you
 would rather not run it at every start, paste its output into the file
 instead.
 
-- `exec` replaces the shell with dev-null-addict, which starts a new shell inside
-  itself. When that shell exits, dev-null-addict exits with the shell's exit code,
-  so `exit` works as before.
-- The snippet does nothing in a shell that is not interactive or not on a
-  terminal, so scripts, `scp` and the like are not affected.
-- The shell inside gets `NO_DEV_NULL_ADDICT=1`, and the snippet does nothing
-  there. Set `NO_DEV_NULL_ADDICT` to any non-empty value yourself to skip it
-  for a shell.
-- For fish, the snippet starts fish inside unless `--shell` is given, since
-  `$SHELL` often names another shell for fish users.
-- If dev-null-addict can't start, it prints why and runs the shell without itself,
-  so you still get a prompt.
-- If a hand-written startup line misses the `NO_DEV_NULL_ADDICT` check and
-  dev-null-addict finds itself started inside itself, it says so and runs the
-  shell without its startup files (`bash --norc`, `zsh --no-rcs`,
-  `fish --no-config`). Fix the line and open a new terminal.
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/b5926553-6988-4117-8376-b7451d6bf31e" controls></video>
+</div>
 
 ## Sign in
 
