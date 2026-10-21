@@ -11,15 +11,20 @@ pub(super) fn lines(
     let mut lines = Vec::new();
     match entry {
         CommitEntry::Live(commit) => {
-            lines.push(Line::styled(
-                format!(
-                    "@{}  {}  {}",
-                    commit.author.username,
-                    crate::ui::format::relative_time(commit.created_at, now),
-                    commit.short_hash
+            lines.push(Line::from(vec![
+                Span::styled(
+                    format!("@{}", commit.author.username),
+                    theme::user(commit.author.lane.as_ref()),
                 ),
-                theme::accent(),
-            ));
+                Span::styled(
+                    format!(
+                        "  {}  {}",
+                        crate::ui::format::relative_time(commit.created_at, now),
+                        commit.short_hash
+                    ),
+                    theme::accent(),
+                ),
+            ]));
             let (body, omitted) = crate::ui::format::fold(
                 &commit.body,
                 width,

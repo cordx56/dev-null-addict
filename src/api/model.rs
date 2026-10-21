@@ -11,6 +11,32 @@ use super::{CommitId, Cursor, ShortHash, Username};
 pub struct User {
     pub username: Username,
     pub name: Option<String>,
+    #[serde(default, deserialize_with = "lane")]
+    pub lane: Option<Lane>,
+}
+
+/// The color a user's name is drawn with on /dev/null.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Lane {
+    /// Picked by the user, as /dev/null sends it, meant to be `#rrggbb`.
+    Picked(String),
+    /// One of /dev/null's own lane colors, numbered from 0, for a user who
+    /// picked none.
+    Automatic(u8),
+}
+
+/// Leaves out a lane of a shape /dev/null does not send yet, rather than
+/// failing the whole commit.
+fn lane<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Lane>, D::Error> {
+    Ok(match serde_json::Value::deserialize(deserializer)? {
+        serde_json::Value::String(lane) => Some(Lane::Picked(lane)),
+        serde_json::Value::Number(lane) => lane
+            .as_u64()
+            .and_then(|lane| u8::try_from(lane).ok())
+            .map(Lane::Automatic),
+        _ => None,
+    })
 }
 
 /// Where a commit is in moderation. Only the author sees their own commits
@@ -163,7 +189,7 @@ mod tests {
     use super::*;
     use crate::test_support::{commit_json, id};
 
-    // Signed resources omit optional counts, include extra fields and may contain deleted quoted commits.
+    // Signed resources omit optional counts, include extra fields and may contain deleted quoted commits; lanes are picked colors or numbered ones.
     #[test]
     fn upstream_resources_deserialize() {
         let deleted = serde_json::json!({"id": id(2), "parent_id": id(1), "deleted_at": "2026-10-21T00:00:00Z", "replies_count": 3});
@@ -186,6 +212,22 @@ mod tests {
             serde_json::from_value(serde_json::json!({"data": live, "ancestors": [deleted]}))
                 .unwrap();
         assert_eq!(thread.commit.id, id(1));
+        for (lane, expected) in [
+            (
+                serde_json::json!("#719681"),
+                Some(Lane::Picked("#719681".into())),
+            ),
+            (serde_json::json!(5), Some(Lane::Automatic(5))),
+            (serde_json::json!(-1), None),
+            (serde_json::json!(1.5), None),
+            (serde_json::Value::Null, None),
+        ] {
+            let user: User = serde_json::from_value(
+                serde_json::json!({"username": "someone", "name": null, "lane": lane}),
+            )
+            .unwrap();
+            assert_eq!(user.lane, expected);
+        }
         assert_eq!(thread.ancestors[0].id(), id(2));
         let round_trip: Thread =
             serde_json::from_value(serde_json::to_value(&thread).unwrap()).unwrap();

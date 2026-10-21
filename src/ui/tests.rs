@@ -18,6 +18,7 @@ fn ready(app: &mut App, now: Instant) {
         Ok(Response::User(User {
             username: "someone".into(),
             name: None,
+            lane: None,
         })),
         now,
     );
@@ -405,7 +406,7 @@ fn scrolling_uses_resizes_and_composer_layout_without_rendering() {
     );
 }
 
-// Selected commits preserve foreground readability; only starred counts are yellow, and every line has a focus-aware bar.
+// Selected commits preserve foreground readability; only usernames take lane colors, only starred counts are yellow, and every line has a focus-aware bar.
 #[test]
 fn selection_and_counts_use_semantic_ansi_styles() {
     use ratatui::style::{Color, Modifier};
@@ -441,7 +442,12 @@ fn selection_and_counts_use_semantic_ansi_styles() {
                         let cell = &buffer[(col, row)];
                         assert_eq!(cell.bg, Color::Reset);
                         assert!(!cell.modifier.contains(Modifier::REVERSED));
-                        assert!(!matches!(cell.fg, Color::Rgb(..) | Color::Indexed(..)));
+                        // Only the username takes its lane color, the fixture's lane 4.
+                        if row == area.y && (2..2 + "@someone".len() as u16).contains(&col) {
+                            assert_eq!(cell.fg, Color::Rgb(0xf0, 0x65, 0x95));
+                        } else {
+                            assert!(!matches!(cell.fg, Color::Rgb(..) | Color::Indexed(..)));
+                        }
                     }
                 }
                 assert!(buffer[(2, area.y)].modifier.contains(Modifier::BOLD));
