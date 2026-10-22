@@ -210,7 +210,7 @@ fn tab_edges_labels_and_new_markers() {
         );
         let buffer = draw(&app);
         assert!(
-            row(&buffer, layout::areas(&app, app.size).tabs.y, app.size)
+            row(&buffer, layout::areas(&app, app.size).tabs.y + 1, app.size)
                 .contains("Notifications (2)")
         );
         app.focus = Focus::List;
@@ -220,14 +220,12 @@ fn tab_edges_labels_and_new_markers() {
         assert_eq!(render::tab_label(&app, Tab::Notifications), "Notifications");
         let area = layout::areas(&app, app.size).list;
         assert!(row(&draw(&app), area.y, area).contains("new"));
-        assert!(app.input(UiInput::Key(Key::Char('l')), now).is_empty());
-        assert_eq!(app.timeline.active(), Tab::Notifications);
         assert_eq!(app.notifications.new.len(), 2);
         app.input(
             if close {
                 UiInput::Toggle
             } else {
-                UiInput::Key(Key::Char('h'))
+                UiInput::Key(Key::Char('l'))
             },
             now,
         );
@@ -236,7 +234,9 @@ fn tab_edges_labels_and_new_markers() {
         if close {
             app.open(now);
         } else {
-            app.input(UiInput::Key(Key::Char('l')), now);
+            assert_eq!(app.timeline.active(), Tab::Profile);
+            assert!(app.input(UiInput::Key(Key::Char('l')), now).is_empty());
+            app.input(UiInput::Key(Key::Char('h')), now);
         }
         assert!(!row(&draw(&app), area.y, area).contains("new"));
     }
@@ -393,7 +393,7 @@ fn moderation_results_keep_only_approval_refresh() {
 fn notification_paging_and_tall_item_navigation() {
     let now = Instant::now();
     let mut app = app();
-    app.resize(crate::terminal::TermSize { cols: 80, rows: 10 });
+    app.resize(crate::terminal::TermSize { cols: 80, rows: 12 });
     ready(&mut app, now);
     visit(&mut app, now);
     let mut tall = notification(3, NotificationKind::Rejected);
@@ -479,7 +479,7 @@ fn notification_paging_and_tall_item_navigation() {
         app.notifications.tab.selection.id(),
         Some(first.page.items[1].id)
     );
-    app.resize(crate::terminal::TermSize { cols: 80, rows: 12 });
+    app.resize(crate::terminal::TermSize { cols: 80, rows: 14 });
     app.input(UiInput::Key(Key::Down), now);
     let top = app.viewport().top();
     app.input(UiInput::Key(Key::Up), now);

@@ -7,6 +7,10 @@ use super::SignError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ApiError {
+    /// The username is empty, `.` or `..`, which would not name a user in
+    /// the request's path.
+    #[error("not a username")]
+    InvalidUsername,
     /// /dev/null answered with an error. `message` is written for the user.
     #[error("{message}")]
     Status {

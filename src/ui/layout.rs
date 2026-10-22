@@ -70,7 +70,7 @@ pub(super) fn areas(app: &App, area: Rect) -> Areas {
         Constraint::Length(target_height),
         Constraint::Length(draft_height + 2),
         Constraint::Length(1),
-        Constraint::Length(1),
+        Constraint::Length(3),
         Constraint::Min(0),
     ])
     .split(parts[0]);

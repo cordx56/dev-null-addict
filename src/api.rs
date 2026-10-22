@@ -16,6 +16,6 @@ pub use error::{ApiError, ErrorCode};
 pub use id::{CommitId, Cursor, LogKind, LogKindError, NotificationId, ShortHash, Username};
 pub use model::{
     Commit, CommitEntry, CommitStatus, CurrentUser, DeletedCommit, DeviceApproval, Image, Lane,
-    NotificationGroup, NotificationKind, NotificationPage, Page, Thread, User,
+    NotificationGroup, NotificationKind, NotificationPage, Page, Profile, Thread, User,
 };
 pub use signing::{DeviceKey, Fingerprint, KeyError, SignError, SignedHeaders};

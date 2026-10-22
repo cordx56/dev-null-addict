@@ -306,7 +306,7 @@ fn drawn_list(app: &App) -> Vec<String> {
 fn tall_commits_scroll_before_selection_moves() {
     let now = Instant::now();
     for full in [false, true] {
-        let mut app = scrolling_app(full, 80, 9);
+        let mut app = scrolling_app(full, 80, 11);
         assert_eq!(layout::areas(&app, app.size).list.height, 4);
         let limit = if full { 9 } else { 5 };
         assert!(drawn_list(&app)[0].contains("@someone"));
@@ -363,7 +363,7 @@ fn tall_commits_scroll_before_selection_moves() {
 #[test]
 fn scrolling_uses_resizes_and_composer_layout_without_rendering() {
     let now = Instant::now();
-    let mut app = scrolling_app(true, 100, 12);
+    let mut app = scrolling_app(true, 100, 14);
     let mut long = commit(1);
     long.body = "x".repeat(600);
     long.images.clear();
@@ -376,7 +376,7 @@ fn scrolling_uses_resizes_and_composer_layout_without_rendering() {
     assert_eq!(app.selection().id(), Some(id(1)));
     assert_eq!(selected_offset(&app), 5);
 
-    app.resize(crate::terminal::TermSize { cols: 99, rows: 12 });
+    app.resize(crate::terminal::TermSize { cols: 99, rows: 14 });
     assert_eq!(layout::areas(&app, app.size).list.width, 99);
     app.input(UiInput::Key(Key::Up), now);
     assert_eq!(
@@ -696,3 +696,5 @@ fn standalone_escape_and_help() {
 }
 
 mod notifications;
+
+mod profile;

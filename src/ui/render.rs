@@ -1,6 +1,7 @@
 mod background;
 mod commit;
 mod notification;
+mod profile;
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -26,14 +27,15 @@ pub(super) fn tab_label(app: &App, tab: Tab) -> String {
             format!("Notifications ({})", app.notifications.new.len())
         }
         Tab::Notifications => "Notifications".into(),
+        Tab::Profile => "Profile".into(),
     }
 }
 
 /// Draws the overlay.
 ///
 /// From top to bottom: the target line (when replying or quoting), the
-/// composer, a line with the counter and Send, the log tabs, and the
-/// timeline or the innermost thread. With at least
+/// composer, a line with the counter and Send, the tabs between two rules,
+/// and the timeline or the innermost thread. With at least
 /// [`help::MIN_WIDTH`](super::help::MIN_WIDTH) columns the keys go down the
 /// right edge. Popups go over everything. The cursor is put where the draft
 /// is edited, so that an input method shows its candidates there.
@@ -123,7 +125,11 @@ fn draw_tabs(app: &App, frame: &mut Frame<'_>, area: Rect) {
             )
         })
         .collect();
-    frame.render_widget(Paragraph::new(Line::from(tabs)), area);
+    frame.render_widget(
+        Paragraph::new(Line::from(tabs))
+            .block(Block::default().borders(Borders::TOP | Borders::BOTTOM)),
+        area,
+    );
 }
 
 pub(super) fn entry_height(entry: &CommitEntry, width: u16, full: bool) -> usize {
@@ -159,6 +165,33 @@ fn draw_list(app: &App, frame: &mut Frame<'_>, area: Rect, now: jiff::Timestamp)
         frame.render_widget(Paragraph::new(message).wrap(Wrap { trim: false }), area);
         return;
     }
+    let area = if app.showing_profile() {
+        if let Some(message) = app
+            .profiles
+            .shown()
+            .and_then(|view| view.unavailable.as_deref())
+        {
+            frame.render_widget(
+                Paragraph::new(profile::message_lines(message, area.width)),
+                area,
+            );
+            return;
+        }
+        if app
+            .profiles
+            .shown()
+            .is_none_or(|view| view.profile.is_none())
+        {
+            frame.render_widget(Paragraph::new(" Loading..."), area);
+            return;
+        }
+        let posts = app.post_area(area);
+        let header = Rect::new(area.x, area.y, area.width, posts.y - area.y);
+        frame.render_widget(Paragraph::new(profile::lines(app, area.width)), header);
+        posts
+    } else {
+        area
+    };
     let (entries, loaded, empty): (Vec<_>, _, _) = if app.showing_notifications() {
         let tab = &app.notifications.tab;
         (
@@ -184,11 +217,13 @@ fn draw_list(app: &App, frame: &mut Frame<'_>, area: Rect, now: jiff::Timestamp)
         let selection = app.selection();
         let full = !app.threads.is_empty();
         let loaded = app.threads.last().map_or_else(
-            || {
-                app.timeline
-                    .tab(app.timeline.active_log().expect("log rendering"))
-                    .list
-                    .is_loaded()
+            || match app.timeline.active() {
+                Tab::Profile => app
+                    .profiles
+                    .shown()
+                    .is_some_and(|view| view.commits.is_loaded()),
+                Tab::Log(kind) => app.timeline.tab(kind).list.is_loaded(),
+                Tab::Notifications => false,
             },
             |view| view.is_loaded() && view.replies().is_loaded(),
         );
@@ -196,10 +231,17 @@ fn draw_list(app: &App, frame: &mut Frame<'_>, area: Rect, now: jiff::Timestamp)
             app.list_entries()
                 .into_iter()
                 .map(|entry| {
-                    (
-                        Some(entry.id()) == selection.id(),
-                        commit::lines(entry, area.width.saturating_sub(2), full, now),
-                    )
+                    let mut lines = commit::lines(entry, area.width.saturating_sub(2), full, now);
+                    if app.showing_profile()
+                        && app
+                            .profiles
+                            .shown()
+                            .is_some_and(|view| view.is_pinned(entry.id()))
+                        && let Some(header) = lines.first_mut()
+                    {
+                        header.spans.push(Span::styled("  pinned", theme::muted()));
+                    }
+                    (Some(entry.id()) == selection.id(), lines)
                 })
                 .collect(),
             loaded,
@@ -208,11 +250,18 @@ fn draw_list(app: &App, frame: &mut Frame<'_>, area: Rect, now: jiff::Timestamp)
     };
     if entries.is_empty() {
         frame.render_widget(
-            Paragraph::new(if loaded { empty } else { "Loading..." }),
+            Paragraph::new(if loaded {
+                empty
+            } else if app.showing_profile() {
+                " Loading..."
+            } else {
+                "Loading..."
+            }),
             area,
         );
         return;
     }
+    let loading = app.showing_profile() && !loaded;
     let visible: Vec<_> = entries
         .into_iter()
         .flat_map(|(selected, mut lines)| {
@@ -237,6 +286,7 @@ fn draw_list(app: &App, frame: &mut Frame<'_>, area: Rect, now: jiff::Timestamp)
                 line
             })
         })
+        .chain(loading.then(|| Line::raw(" Loading...")))
         .skip(app.viewport().top())
         .take(usize::from(area.height))
         .collect();
@@ -260,6 +310,8 @@ fn draw_help(app: &App, frame: &mut Frame<'_>, area: Rect) {
             && selected.is_none() && matches!(key.as_str(), "Enter" | "r" | "q" | "s" | "d") {
             return false;
         }
+        if key == "p" { return app.profile_target().is_some(); }
+        if key == "f" { return app.follow_target().is_some(); }
         key != "d" || matches!(&selected, Some(CommitEntry::Live(commit)) if app.me.as_ref() == Some(&commit.author.username))
     }).map(|(key, action)| Line::from(vec![Span::styled(format!("{key:<10}"), theme::accent()), Span::raw(action)])).collect();
     frame.render_widget(

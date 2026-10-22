@@ -35,7 +35,7 @@ impl Timeline {
     pub fn active_log(&self) -> Option<LogKind> {
         match self.active {
             Tab::Log(kind) => Some(kind),
-            Tab::Notifications => None,
+            Tab::Notifications | Tab::Profile => None,
         }
     }
 

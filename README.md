@@ -115,7 +115,7 @@ Once /dev/null is open:
 | Key | |
 |---|---|
 | toggle key | Close |
-| `Esc` | Back: closes a popup, then a thread, then /dev/null, which quits when run on its own |
+| `Esc` | Back: closes a popup, then a thread, then a profile opened with p, then /dev/null, which quits when run on its own |
 | `Tab` | Next: composer, Send, timeline |
 
 In the composer, type as usual. Enter starts a new line. Backspace on an empty
@@ -130,11 +130,13 @@ In the timeline and in threads:
 | Key | |
 |---|---|
 | `j` / `k`, `↓` / `↑` | Next / previous commit. A commit taller than the list scrolls line by line first |
-| `h` / `l`, `←` / `→` | Previous / next tab: Following, Latest, Trending, Notifications (timeline only) |
+| `h` / `l`, `←` / `→` | Previous / next tab: Following, Latest, Trending, Notifications, Profile (timeline only) |
 | `Enter` | Open the thread, with every commit in full |
 | `r` | Reply |
 | `q` | Quote |
 | `s` | Star / unstar |
+| `p` | Open the author's profile. On a notification, the profile of who it is from |
+| `f` | Follow, on someone else's profile |
 | `d` | Delete your commit. It asks first: Enter deletes, Esc keeps it |
 
 The window takes 80% of the terminal's width and height, and the whole
@@ -176,6 +178,23 @@ Fetching notifications marks them all as read, on the web too, as opening
 the web's notifications page does. dev-null-addict remembers which were new:
 they are marked `new`, and the tab shows how many you have not looked at yet,
 such as `Notifications (2)`, until you have been to the tab.
+
+## Profiles
+
+The Profile tab, after Notifications, shows your own profile. Press `p` on a
+commit to see its author's profile there instead, or on a notification to
+see the profile of who it is from. Esc goes back to where you pressed `p`.
+Moving to another tab with `h` or `l` forgets it, so Profile shows your own
+again when you come back.
+
+At the top are the name, the bio, where they are, their counts and when they
+joined, and on someone else's profile, whether you follow each other. The
+avatar is not shown. Below are the pinned commit and then the other commits,
+newest first, which work as in the timeline.
+
+On someone else's profile, `f` follows them. There is no key to unfollow. A
+profile you can't see, such as across a block, shows why instead, and is not
+fetched again.
 
 ## Options
 

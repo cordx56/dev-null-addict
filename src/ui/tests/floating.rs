@@ -119,8 +119,8 @@ fn floating_list_scrolls_using_its_inner_area() {
         rows: 20,
     });
     let area = layout::areas(&app, app.size).list;
-    assert_eq!(area.height, 9);
-    for offset in 1..=4 {
+    assert_eq!(area.height, 7);
+    for offset in 1..=6 {
         app.input(UiInput::Key(Key::Down), now);
         assert_eq!(app.selection().id(), Some(id(1)));
         assert_eq!(app.viewport().top(), offset);
@@ -129,4 +129,52 @@ fn floating_list_scrolls_using_its_inner_area() {
     app.input(UiInput::Key(Key::Down), now);
     assert_eq!(app.selection().id(), Some(id(2)));
     assert_eq!(app.viewport().top(), 13);
+}
+
+// Every tab reserves two rule rows in the list column, in both layouts, without drawing across the keys.
+#[test]
+fn tab_rules_bound_the_list_column() {
+    for overlay in [
+        layout::OverlayLayout::FullScreen,
+        layout::OverlayLayout::Float,
+    ] {
+        let mut app = app();
+        app.resize(crate::terminal::TermSize {
+            cols: 150,
+            rows: 40,
+        });
+        app.set_layout(overlay);
+        for tab in Tab::ALL {
+            app.timeline.switch(tab);
+            let areas = layout::areas(&app, app.size);
+            assert_eq!(areas.tabs.height, 3);
+            assert_eq!(areas.tabs.y, areas.send.bottom());
+            assert_eq!(areas.list.y, areas.tabs.bottom());
+            assert_eq!(areas.list.x, areas.tabs.x);
+            assert_eq!(areas.list.width, areas.tabs.width);
+            assert_eq!(areas.list.bottom(), areas.window.inner.bottom());
+            assert_eq!(areas.tabs.right(), areas.help.x);
+            let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(
+                app.size.width,
+                app.size.height,
+            ))
+            .unwrap();
+            terminal
+                .draw(|frame| app.render(frame, jiff::Timestamp::UNIX_EPOCH))
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            for y in [areas.tabs.y, areas.tabs.bottom() - 1] {
+                assert!((areas.tabs.x..areas.tabs.right()).all(|x| buffer[(x, y)].symbol() == "─"));
+                assert!((areas.help.x..areas.help.right()).all(|x| buffer[(x, y)].symbol() != "─"));
+            }
+            let labels: String = (areas.tabs.x..areas.tabs.right())
+                .map(|x| buffer[(x, areas.tabs.y + 1)].symbol())
+                .collect();
+            assert!(labels.contains(" Following  Latest  Trending  Notifications  Profile "));
+            let list: String = (areas.list.x..areas.list.right())
+                .map(|x| buffer[(x, areas.list.y)].symbol())
+                .collect();
+            assert!(list.contains("Loading..."));
+        }
+    }
 }

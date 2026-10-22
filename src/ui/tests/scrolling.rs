@@ -2,7 +2,7 @@ use super::*;
 
 fn short_list(full: bool) -> App {
     let mut app = app();
-    app.resize(crate::terminal::TermSize { cols: 80, rows: 17 });
+    app.resize(crate::terminal::TermSize { cols: 80, rows: 19 });
     let entries: Vec<_> = (1..=6)
         .map(|n| {
             let mut c = commit(n);
@@ -142,7 +142,7 @@ fn updates_and_resizes_keep_selection_visible_without_render_mutation() {
         now,
     );
     assert_eq!(*app.viewport(), viewport);
-    app.resize(crate::terminal::TermSize { cols: 80, rows: 13 });
+    app.resize(crate::terminal::TermSize { cols: 80, rows: 15 });
     assert_eq!(app.viewport().top(), 12);
     assert!(drawn_list(&app).iter().any(|line| line.contains("body 5")));
     for n in [6, 5, 4] {

@@ -14,6 +14,7 @@ mod list;
 mod navigation;
 mod notifications;
 mod popup;
+mod profile;
 mod render;
 mod selection;
 mod tab;
@@ -28,7 +29,7 @@ use ratatui::Frame;
 
 use crate::api::{
     ApiError, Commit, CommitEntry, CommitId, CurrentUser, Cursor, KeyError, LogKind, NewCommit,
-    NotificationPage, Page, Thread, Username,
+    NotificationPage, Page, Profile, Thread, Username,
 };
 use crate::input::{ToggleKey, UiInput};
 
@@ -36,6 +37,7 @@ use self::banner::Banner;
 use self::compose::Compose;
 use self::notifications::Notifications;
 use self::popup::{Notice, Popup};
+use self::profile::{Place, Profiles};
 pub use self::tab::Tab;
 use self::thread::ThreadView;
 use self::timeline::Timeline;
@@ -52,6 +54,8 @@ pub struct App {
     compose: Compose,
     timeline: Timeline,
     notifications: Notifications,
+    profiles: Profiles,
+    back: Vec<Place>,
     banner: Option<Banner>,
     /// Threads opened with Enter, innermost last. Esc closes the last one.
     threads: Vec<ThreadView>,
@@ -97,6 +101,12 @@ pub enum Effect {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Request {
     Me,
+    Profile(Username),
+    UserCommits {
+        username: Username,
+        cursor: Option<Cursor>,
+    },
+    Follow(Username),
     Log {
         kind: LogKind,
         cursor: Option<Cursor>,
@@ -127,6 +137,7 @@ pub enum Request {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Response {
     CurrentUser(CurrentUser),
+    Profile(Box<Profile>),
     Notifications(NotificationPage),
     Entries(Page<CommitEntry>),
     Thread(Thread),
@@ -166,6 +177,8 @@ impl App {
             compose: Compose::new(),
             timeline: Timeline::new(log),
             notifications: Notifications::new(),
+            profiles: Profiles::default(),
+            back: Vec::new(),
             banner: None,
             threads: Vec::new(),
             popup: None,
@@ -197,7 +210,8 @@ impl App {
     /// Handles a key, a paste or the toggle key.
     ///
     /// Esc goes back one step: it closes a popup, else the innermost thread,
-    /// else the overlay. The toggle key always closes the overlay.
+    /// then a profile opened with p, else the overlay. The toggle key always
+    /// closes the overlay.
     pub fn input(&mut self, input: UiInput, now: Instant) -> Vec<Effect> {
         let effects = self.handle_input(input, now);
         if effects.contains(&Effect::Close) && self.timeline.active() == Tab::Notifications {
@@ -221,6 +235,12 @@ impl App {
             }
             if self.threads.pop().is_some() {
                 return Vec::new();
+            }
+            if let Some(place) = self.back.pop() {
+                self.timeline.switch(place.tab);
+                self.threads = place.threads;
+                self.profiles.other = place.other;
+                return self.refresh(now);
             }
             self.opened = false;
             self.next_refresh = None;
@@ -296,16 +316,20 @@ impl App {
             cursor: Some(_),
         } = &request
         {
-            for view in self.threads.iter_mut().filter(|v| v.id() == *id) {
+            for view in self.kept_threads_mut().filter(|v| v.id() == *id) {
                 view.replies_mut().more_done();
             }
         }
+        self.profile_more_done(&request);
         let response = match result {
             Ok(response) => {
                 self.notice = None;
                 response
             }
             Err(error) => {
+                if self.profile_error(&request, &error) {
+                    return Vec::new();
+                }
                 match &error {
                     Failure::SignedOut => self.notice = Some(Notice::SignedOut),
                     Failure::Api(error)
@@ -334,14 +358,11 @@ impl App {
                 return Vec::new();
             }
         };
+        if let Some(effects) = self.profile_answer(&request, &response) {
+            return effects;
+        }
         match (request, response) {
-            (Request::Me, Response::CurrentUser(current)) => {
-                self.me = Some(current.user.username);
-                if current.unread_notifications > 0 && self.timeline.active() != Tab::Notifications
-                {
-                    return self.queue(vec![Request::Notifications { cursor: None }]);
-                }
-            }
+            (Request::Me, Response::CurrentUser(current)) => return self.receive_me(current),
             (Request::Notifications { cursor }, Response::Notifications(page)) => {
                 if let Some(text) = self.notifications.receive(page, cursor.is_some()) {
                     self.banner = Some(Banner {
@@ -366,12 +387,12 @@ impl App {
                 );
             }
             (Request::Thread(id), Response::Thread(thread)) => {
-                for view in self.threads.iter_mut().filter(|v| v.id() == id) {
+                for view in self.kept_threads_mut().filter(|v| v.id() == id) {
                     view.set_thread(thread.clone());
                 }
             }
             (Request::Replies { id, cursor }, Response::Entries(page)) => {
-                for view in self.threads.iter_mut().filter(|v| v.id() == id) {
+                for view in self.kept_threads_mut().filter(|v| v.id() == id) {
                     if cursor.is_some() {
                         view.replies_mut().append(page.clone());
                         view.reanchor();
@@ -382,7 +403,7 @@ impl App {
             }
             (Request::NewestReplies { id, cursor }, Response::Entries(page)) => {
                 let mut next = None;
-                for view in self.threads.iter_mut().filter(|v| v.id() == id) {
+                for view in self.kept_threads_mut().filter(|v| v.id() == id) {
                     next = view
                         .replies_mut()
                         .refresh_newest(page.clone(), cursor.is_none());
@@ -432,9 +453,10 @@ impl App {
                             .collect::<Vec<_>>(),
                     );
                 }
-                for view in &mut self.threads {
+                for view in self.kept_threads_mut() {
                     view.remove(id);
                 }
+                self.remove_from_profiles(id);
                 self.notifications.change_commit(id, None);
                 self.pending.retain(|p| *p != id);
             }
@@ -524,13 +546,12 @@ impl App {
         if self.backoff_until.is_some_and(|t| t > now) {
             return Vec::new();
         }
-        let mut requests = vec![
-            Request::Me,
-            match self.timeline.active() {
-                Tab::Log(kind) => Request::Log { kind, cursor: None },
-                Tab::Notifications => Request::Notifications { cursor: None },
-            },
-        ];
+        let mut requests = vec![Request::Me];
+        match self.timeline.active() {
+            Tab::Log(kind) => requests.push(Request::Log { kind, cursor: None }),
+            Tab::Notifications => requests.push(Request::Notifications { cursor: None }),
+            Tab::Profile => requests.extend(self.profile_requests()),
+        }
         if let Some(view) = self.threads.last() {
             requests.push(Request::Thread(view.id()));
             requests.push(if view.replies().exhausted() {
@@ -550,6 +571,9 @@ impl App {
     }
 
     fn selected(&self) -> Option<CommitEntry> {
+        if self.showing_profile() && self.profiles.shown().is_none() {
+            return None;
+        }
         if self.showing_notifications() {
             let tab = &self.notifications.tab;
             tab.list
@@ -568,6 +592,7 @@ impl App {
     }
 
     fn update_commit(&mut self, entry: CommitEntry) {
+        self.update_profiles(&entry);
         self.notifications.change_commit(
             entry.id(),
             match &entry {
@@ -578,7 +603,7 @@ impl App {
         for kind in LogKind::ALL {
             self.timeline.tab_mut(kind).list.update(entry.clone());
         }
-        for view in &mut self.threads {
+        for view in self.kept_threads_mut() {
             view.update(entry.clone());
         }
     }
@@ -600,10 +625,18 @@ impl App {
                 if self.timeline.active() == Tab::Notifications {
                     self.notifications.new.clear();
                 }
+                self.back.clear();
+                self.profiles.other = None;
                 if self.timeline.switch(kind) {
                     return self.refresh(now);
                 }
             }
+        }
+        if key == Key::Char('p') {
+            return self.open_profile(now);
+        }
+        if key == Key::Char('f') {
+            return self.follow_profile();
         }
         let Some(entry) = self.selected() else {
             return Vec::new();

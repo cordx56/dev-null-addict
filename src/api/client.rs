@@ -7,7 +7,7 @@ use url::Url;
 
 use super::{
     ApiError, Commit, CommitEntry, CommitId, CurrentUser, Cursor, DeviceApproval, DeviceKey,
-    LogKind, NewCommit, NotificationPage, Page, Thread, User,
+    LogKind, NewCommit, NotificationPage, Page, Profile, Thread, User, Username,
 };
 
 /// The /dev/null site to talk to.
@@ -97,6 +97,42 @@ impl Client {
 
     pub async fn me(&self) -> Result<CurrentUser, ApiError> {
         self.request("GET", "/api/v1/me", None, None).await
+    }
+
+    /// Across a block, /dev/null answers with
+    /// [`UserBlocked`](super::ErrorCode::UserBlocked) or
+    /// [`UserUnavailable`](super::ErrorCode::UserUnavailable).
+    pub async fn profile(&self, username: &Username) -> Result<Profile, ApiError> {
+        self.request("GET", &self.user_path(username)?, None, None)
+            .await
+    }
+
+    /// A page of the user's commits that are not replies, newest first, without
+    /// the pinned one.
+    pub async fn user_commits(
+        &self,
+        username: &Username,
+        cursor: Option<&Cursor>,
+    ) -> Result<Page<CommitEntry>, ApiError> {
+        self.request(
+            "GET",
+            &format!("{}/commits", self.user_path(username)?),
+            cursor,
+            None,
+        )
+        .await
+    }
+
+    /// Following someone already followed does nothing.
+    pub async fn follow(&self, username: &Username) -> Result<(), ApiError> {
+        self.raw(
+            "POST",
+            &format!("{}/follow", self.user_path(username)?),
+            None,
+            None,
+        )
+        .await
+        .map(|_| ())
     }
 
     /// A page of notification groups, newest first, unfiltered. As on the web,
@@ -301,6 +337,23 @@ impl Client {
     }
 }
 
+impl Client {
+    fn user_path(&self, username: &Username) -> Result<String, ApiError> {
+        if matches!(username.as_str(), "" | "." | "..") {
+            return Err(ApiError::InvalidUsername);
+        }
+        let mut url = self
+            .base
+            .as_url()
+            .join("/api/v1/users")
+            .expect("constant API path");
+        url.path_segments_mut()
+            .expect("HTTP URL has path segments")
+            .push(username.as_str());
+        Ok(url.path().to_owned())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -348,6 +401,60 @@ mod tests {
         assert_eq!(headers["Content-Type"], "application/json");
         let get = client.prepare("GET", "/api/v1/me", None, None).unwrap();
         assert!(get.body().is_none());
+    }
+
+    // Usernames remain one segment and signatures verify against the exact encoded URL for all three endpoints.
+    #[test]
+    fn username_paths_are_encoded_before_signing() {
+        let dir = crate::test_support::TestDir::new();
+        let key_path = dir.0.join("key");
+        let key = DeviceKey::generate(&key_path, "profile request test").unwrap();
+        let public = ssh_key::PrivateKey::from_openssh(std::fs::read_to_string(key_path).unwrap())
+            .unwrap()
+            .public_key()
+            .clone();
+        let client = Client::new(BaseUrl::default(), key).unwrap();
+        let username = Username::from("../a/b?x=#%2f\\ name界");
+        let path = client.user_path(&username).unwrap();
+        assert_eq!(
+            path,
+            "/api/v1/users/..%2Fa%2Fb%3Fx=%23%252f%5C%20name%E7%95%8C"
+        );
+        for (method, suffix, cursor) in [
+            ("GET", "", None),
+            ("GET", "/commits", Some(Cursor::from("+/=".to_owned()))),
+            ("POST", "/follow", None),
+        ] {
+            let request = client
+                .prepare(method, &format!("{path}{suffix}"), cursor.as_ref(), None)
+                .unwrap();
+            assert_eq!(request.url().path(), format!("{path}{suffix}"));
+            let headers = request.headers();
+            let timestamp = headers[SignedHeaders::TIMESTAMP].to_str().unwrap();
+            let nonce = headers[SignedHeaders::NONCE].to_str().unwrap();
+            let signature = headers[SignedHeaders::SIGNATURE]
+                .as_bytes()
+                .chunks(70)
+                .map(|line| std::str::from_utf8(line).unwrap())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let signature = ssh_key::SshSig::from_pem(format!(
+                "-----BEGIN SSH SIGNATURE-----\n{signature}\n-----END SSH SIGNATURE-----\n"
+            ))
+            .unwrap();
+            let wire_path = &request.url()[url::Position::BeforePath..url::Position::AfterQuery];
+            let message = format!("{timestamp}\n{nonce}\n{method}\n{wire_path}\n");
+            public
+                .verify("devnull-api", message.as_bytes(), &signature)
+                .unwrap();
+            assert!(request.body().is_none());
+        }
+        for username in ["", ".", ".."] {
+            assert!(matches!(
+                client.user_path(&Username::from(username)),
+                Err(ApiError::InvalidUsername)
+            ));
+        }
     }
 
     // Only the explicitly permitted loopback hosts may bypass HTTPS.

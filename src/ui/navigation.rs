@@ -35,6 +35,13 @@ impl App {
         if self.showing_notifications() {
             return &self.notifications.tab.viewport;
         }
+        if self.showing_profile() {
+            return &self
+                .profiles
+                .shown()
+                .expect("profile username is known")
+                .viewport;
+        }
         self.threads.last().map_or_else(
             || {
                 &self
@@ -47,8 +54,8 @@ impl App {
     }
 
     pub(super) fn sync_viewport(&mut self) {
-        let area = layout::areas(self, self.size).list;
-        if area.is_empty() {
+        let area = self.post_area(layout::areas(self, self.size).list);
+        if area.is_empty() || (self.showing_profile() && self.profiles.shown().is_none()) {
             return;
         }
         if self.showing_notifications() {
@@ -62,6 +69,12 @@ impl App {
         let selected = self.selection().id();
         let viewport = if let Some(view) = self.threads.last_mut() {
             &mut view.viewport
+        } else if self.timeline.active() == Tab::Profile {
+            &mut self
+                .profiles
+                .shown_mut()
+                .expect("profile username is known")
+                .viewport
         } else {
             &mut self
                 .timeline
@@ -85,6 +98,12 @@ impl App {
     }
 
     pub(super) fn list_entries(&self) -> Vec<&CommitEntry> {
+        if self.showing_profile() {
+            return self
+                .profiles
+                .shown()
+                .map_or_else(Vec::new, |view| view.entries().collect());
+        }
         self.threads.last().map_or_else(
             || {
                 self.timeline
@@ -99,6 +118,13 @@ impl App {
     }
 
     pub(super) fn selection(&self) -> &Selection {
+        if self.showing_profile() {
+            return &self
+                .profiles
+                .shown()
+                .expect("profile username is known")
+                .selection;
+        }
         self.threads.last().map_or_else(
             || {
                 &self
@@ -111,8 +137,8 @@ impl App {
     }
 
     pub(super) fn move_selection(&mut self, down: bool) -> Vec<Effect> {
-        let area = layout::areas(self, self.size).list;
-        if area.is_empty() {
+        let area = self.post_area(layout::areas(self, self.size).list);
+        if area.is_empty() || (self.showing_profile() && self.profiles.shown().is_none()) {
             return Vec::new();
         }
         if self.showing_notifications() {
@@ -136,6 +162,29 @@ impl App {
                     .begin_more()
                     .map(|cursor| Request::Replies {
                         id: view.id(),
+                        cursor: Some(cursor),
+                    })
+            } else {
+                None
+            }
+        } else if self.timeline.active() == Tab::Profile {
+            let view = self
+                .profiles
+                .shown_mut()
+                .expect("profile username is known");
+            let navigate =
+                view.viewport
+                    .move_line(&mut view.selection, &entries, area.height, down);
+            if view.profile.is_some()
+                && view.unavailable.is_none()
+                && navigate
+                && down
+                && view.selection.id() == last
+            {
+                view.commits
+                    .begin_more()
+                    .map(|cursor| Request::UserCommits {
+                        username: view.username.clone(),
                         cursor: Some(cursor),
                     })
             } else {

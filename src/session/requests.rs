@@ -88,6 +88,15 @@ impl Requests {
 
 async fn execute(client: &Client, request: &Request) -> Result<Response, crate::api::ApiError> {
     match request {
+        Request::Profile(username) => client
+            .profile(username)
+            .await
+            .map(|profile| Response::Profile(Box::new(profile))),
+        Request::UserCommits { username, cursor } => client
+            .user_commits(username, cursor.as_ref())
+            .await
+            .map(Response::Entries),
+        Request::Follow(username) => client.follow(username).await.map(|()| Response::Done),
         Request::Me => client.me().await.map(Response::CurrentUser),
         Request::Log { kind, cursor } => client
             .log(*kind, cursor.as_ref())

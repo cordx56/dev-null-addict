@@ -1,3 +1,7 @@
+mod profile;
+
+pub use profile::Profile;
+
 use std::fmt;
 
 use jiff::Timestamp;
