@@ -225,7 +225,7 @@ fn notification_actor_and_own_targets() {
         app.timeline.switch(Tab::Notifications);
         let group: crate::api::NotificationGroup = serde_json::from_value(serde_json::json!({
             "id": id(20), "type": "followed", "created_at": "2026-10-22T12:00:00Z", "read_at": "2026-10-22T12:00:00Z",
-            "actor": {"username": actor}, "actors_count": 1, "event_count": 1, "unread_count": 1,
+            "actor": {"handle": actor}, "actors_count": 1, "event_count": 1, "unread_count": 1,
             "commit": if has_commit { Some(commit(2)) } else { None },
         })).unwrap();
         let group_id = group.id;
@@ -635,7 +635,7 @@ fn contextual_profile_and_follow_help() {
     );
     app.timeline.switch(Tab::Notifications);
     let group: crate::api::NotificationGroup = serde_json::from_value(serde_json::json!({
-        "id": id(20), "type": "followed", "created_at": "2026-10-22T12:00:00Z", "actor": {"username": "actor"},
+        "id": id(20), "type": "followed", "created_at": "2026-10-22T12:00:00Z", "actor": {"handle": "actor"},
         "actors_count": 1, "event_count": 1, "unread_count": 0,
     })).unwrap();
     app.notifications.tab.list.refresh(Page {
@@ -653,7 +653,7 @@ fn contextual_profile_and_follow_help() {
 #[test]
 fn upstream_profile_deserializes_and_round_trips() {
     let raw = serde_json::json!({
-        "data": { "id": 42, "username": "author", "name": "Display Name", "avatar_url": "https://example.test/avatar",
+        "data": { "id": 42, "handle": "author", "name": "Display Name", "avatar_url": "https://example.test/avatar",
             "bio": "About", "company": "Company", "location": "Location", "website": "example.test", "github_url": "https://github.com/author",
             "html_url": "https://dev-null.sh/@author", "feed_url": "https://dev-null.sh/@author/feed", "created_at": "2026-10-20T12:00:00Z",
             "commits_count": 12, "followers_count": 3, "following_count": 4, "lane": "#123456" },
@@ -667,7 +667,7 @@ fn upstream_profile_deserializes_and_round_trips() {
     assert_eq!(profile.following_count, Some(4));
     assert_eq!(profile.pinned_commit.as_ref().unwrap().id, id(1));
     let encoded = serde_json::to_value(&profile).unwrap();
-    assert_eq!(encoded["data"]["username"], "author");
+    assert_eq!(encoded["data"]["handle"], "author");
     assert_eq!(encoded["is_following"], true);
     assert_eq!(serde_json::from_value::<Profile>(encoded).unwrap(), profile);
     let mut minimal = raw;

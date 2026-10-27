@@ -13,6 +13,7 @@ use super::{CommitId, Cursor, NotificationId, ShortHash, Username};
 /// A /dev/null user, as commits carry their author.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct User {
+    #[serde(rename = "handle", alias = "username")]
     pub username: Username,
     pub name: Option<String>,
     #[serde(default, deserialize_with = "lane")]
@@ -260,6 +261,14 @@ mod tests {
     use super::*;
     use crate::test_support::{commit_json, id};
 
+    // The server may still send the old key during or after the rollout.
+    #[test]
+    fn user_deserializes_legacy_username() {
+        let user: User =
+            serde_json::from_value(serde_json::json!({"username": "someone"})).unwrap();
+        assert_eq!(user.username.as_str(), "someone");
+    }
+
     // Signed resources omit optional counts, include extra fields and may contain deleted quoted commits; lanes are picked colors or numbered ones.
     #[test]
     fn upstream_resources_deserialize() {
@@ -294,7 +303,7 @@ mod tests {
             (serde_json::Value::Null, None),
         ] {
             let user: User = serde_json::from_value(
-                serde_json::json!({"username": "someone", "name": null, "lane": lane}),
+                serde_json::json!({"handle": "someone", "name": null, "lane": lane}),
             )
             .unwrap();
             assert_eq!(user.lane, expected);

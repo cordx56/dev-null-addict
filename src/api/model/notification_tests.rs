@@ -30,7 +30,7 @@ fn notification_resources_decode_sparse_commits_and_future_kinds() {
             "id": uuid::Uuid::from_u128(i as u128 + 1), "type": kind,
             "subject_id": null, "reason": if *kind == "rejected" { Some("spam") } else { None },
             "read_at": "2026-10-22T12:00:00Z", "created_at": "2026-10-22T11:00:00Z",
-            "actor": { "username": "someone", "name": "Some One", "is_followed": true },
+            "actor": { "handle": "someone", "name": "Some One", "is_followed": true },
             "group_id": uuid::Uuid::from_u128(i as u128 + 1),
             "event_count": 4, "actors_count": 2, "unread_count": 0,
             "commit": if ["followed", "leveled_up"].contains(kind) { serde_json::Value::Null } else { commit.clone() },
@@ -41,7 +41,7 @@ fn notification_resources_decode_sparse_commits_and_future_kinds() {
         "read_at": "2026-10-22T12:00:00Z", "filters": {"type": "all"}
     });
     response["data"][1]["actors"] = serde_json::json!([
-        {"username": "someone", "name": "Some One"}, {"username": "another", "name": null}
+        {"handle": "someone", "name": "Some One"}, {"handle": "another", "name": null}
     ]);
     let page: NotificationPage = serde_json::from_value(response).unwrap();
     assert_eq!(
@@ -75,7 +75,7 @@ fn fresh_uses_the_read_watermark() {
         "data": ([None, Some("2026-10-22T11:59:59Z"), Some("2026-10-22T21:00:00+09:00"), Some("2026-10-22T12:00:01Z")].iter().enumerate().map(|(i, at)| serde_json::json!({
             "id": uuid::Uuid::from_u128(i as u128 + 1), "type": "followed",
             "read_at": at, "created_at": "2026-10-22T11:00:00Z",
-            "actor": {"username": "someone"}, "actors_count": 1, "event_count": 1, "unread_count": 0,
+            "actor": {"handle": "someone"}, "actors_count": 1, "event_count": 1, "unread_count": 0,
         })).collect::<Vec<_>>()),
         "meta": {"next_cursor": null}, "read_at": "2026-10-22T12:00:00Z"
     })).unwrap();
@@ -89,7 +89,7 @@ fn fresh_uses_the_read_watermark() {
 #[test]
 fn current_user_reads_top_level_unread_count() {
     let current: CurrentUser = serde_json::from_value(serde_json::json!({
-        "data": {"username": "someone", "name": "Some One", "lane": 4, "unread_notifications_count": 99},
+        "data": {"handle": "someone", "name": "Some One", "lane": 4, "unread_notifications_count": 99},
         "unread_notifications_count": 7,
     })).unwrap();
     assert_eq!(current.user.username.as_str(), "someone");

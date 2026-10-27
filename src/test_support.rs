@@ -12,7 +12,7 @@ pub fn commit_json(n: u128) -> serde_json::Value {
     serde_json::json!({
         "id": id(n), "short_hash": format!("{n:07x}"), "body": format!("body {n}"),
         "parent_id": null, "html_url": format!("https://dev-null.sh/@someone/{}", id(n)),
-        "created_at": "2026-10-20T12:00:00Z", "author": {"username": "someone", "name": "Some One", "avatar_url": "https://example.test/avatar", "lane": 4},
+        "created_at": "2026-10-20T12:00:00Z", "author": {"handle": "someone", "name": "Some One", "avatar_url": "https://example.test/avatar", "lane": 4},
         "status": "approved", "stars_count": 1, "replies_count": 0, "starred": false,
         "images": [{"url": "https://example.test/image", "width": 120, "height": 80}],
         "deleted_at": null, "body_segments": [{"type": "text", "text": "body"}],
