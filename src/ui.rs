@@ -42,6 +42,9 @@ pub use self::tab::Tab;
 use self::thread::ThreadView;
 use self::timeline::Timeline;
 
+/// How long after a g in the list a second g still goes to the top, as Vim's `timeoutlen`.
+const GG_TIMEOUT: Duration = Duration::from_secs(1);
+
 /// State of the overlay.
 ///
 /// It lives as long as the wrapper, so the draft, the selection and open
@@ -51,6 +54,8 @@ pub struct App {
     toggle: Option<ToggleKey>,
     refresh_interval: Duration,
     focus: Focus,
+    /// When g was pressed in the list, while a second g would go to the top.
+    pending_g: Option<Instant>,
     compose: Compose,
     timeline: Timeline,
     notifications: Notifications,
@@ -174,6 +179,7 @@ impl App {
             toggle,
             refresh_interval,
             focus: Focus::Compose,
+            pending_g: None,
             compose: Compose::new(),
             timeline: Timeline::new(log),
             notifications: Notifications::new(),
@@ -224,6 +230,7 @@ impl App {
 
     fn handle_input(&mut self, input: UiInput, now: Instant) -> Vec<Effect> {
         use crate::input::Key;
+        let pending_g = self.pending_g.take();
         if input == UiInput::Toggle {
             self.opened = false;
             self.next_refresh = None;
@@ -273,7 +280,7 @@ impl App {
                     return self.queue(vec![Request::Create(commit)]);
                 }
             }
-            (Focus::List, UiInput::Key(key)) => return self.list_input(key, now),
+            (Focus::List, UiInput::Key(key)) => return self.list_input(key, now, pending_g),
             _ => {}
         }
         Vec::new()
@@ -608,8 +615,21 @@ impl App {
         }
     }
 
-    fn list_input(&mut self, key: crate::input::Key, now: Instant) -> Vec<Effect> {
+    fn list_input(
+        &mut self,
+        key: crate::input::Key,
+        now: Instant,
+        pending_g: Option<Instant>,
+    ) -> Vec<Effect> {
         use crate::input::Key;
+        if key == Key::Char('g') {
+            if pending_g.is_some_and(|pressed| now.duration_since(pressed) <= GG_TIMEOUT) {
+                self.go_to_top();
+            } else {
+                self.pending_g = Some(now);
+            }
+            return Vec::new();
+        }
         let down = matches!(key, Key::Down | Key::Char('j'));
         let up = matches!(key, Key::Up | Key::Char('k'));
         if down || up {

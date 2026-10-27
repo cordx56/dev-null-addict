@@ -23,6 +23,12 @@ impl<I: Copy + Eq> Selection<I> {
         self.id
     }
 
+    /// Selects the first of `ids`, or nothing when there is none.
+    pub fn first(&mut self, ids: &[I]) {
+        self.id = ids.first().copied();
+        self.index = 0;
+    }
+
     /// Selects `id` if it is in `ids`.
     pub fn select(&mut self, ids: &[I], id: I) {
         if let Some(index) = ids.iter().position(|candidate| *candidate == id) {

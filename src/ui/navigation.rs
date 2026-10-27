@@ -136,6 +136,39 @@ impl App {
         )
     }
 
+    /// Selects the first entry of the list shown and scrolls to its first line.
+    pub(super) fn go_to_top(&mut self) {
+        if self.showing_notifications() {
+            let tab = &mut self.notifications.tab;
+            let ids: Vec<_> = tab.list.entries().iter().map(|group| group.id).collect();
+            if !ids.is_empty() {
+                tab.selection.first(&ids);
+                tab.viewport = Default::default();
+            }
+            return;
+        }
+        let ids: Vec<_> = self.list_entries().iter().map(|entry| entry.id()).collect();
+        if ids.is_empty() {
+            return;
+        }
+        let (selection, viewport) = if let Some(view) = self.threads.last_mut() {
+            view.navigation()
+        } else if self.timeline.active() == Tab::Profile {
+            let view = self
+                .profiles
+                .shown_mut()
+                .expect("profile username is known");
+            (&mut view.selection, &mut view.viewport)
+        } else {
+            let tab = self
+                .timeline
+                .tab_mut(self.timeline.active_log().expect("log navigation"));
+            (&mut tab.selection, &mut tab.viewport)
+        };
+        selection.first(&ids);
+        *viewport = Default::default();
+    }
+
     pub(super) fn move_selection(&mut self, down: bool) -> Vec<Effect> {
         let area = self.post_area(layout::areas(self, self.size).list);
         if area.is_empty() || (self.showing_profile() && self.profiles.shown().is_none()) {

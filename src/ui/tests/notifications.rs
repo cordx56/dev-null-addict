@@ -54,6 +54,42 @@ fn visit(app: &mut App, now: Instant) {
     assert_eq!(app.timeline.active(), Tab::Notifications);
 }
 
+// gg resets notification selection and scrolling without fetching or refreshing.
+#[test]
+fn gg_returns_to_the_first_notification() {
+    let now = Instant::now();
+    let mut app = app();
+    app.resize(crate::terminal::TermSize { cols: 80, rows: 19 });
+    visit(&mut app, now);
+    receive(
+        &mut app,
+        (1..=12)
+            .map(|n| notification(n, NotificationKind::Followed))
+            .collect(),
+        now,
+    );
+    let first = app.notifications.tab.list.entries()[0].id;
+    for _ in 0..10 {
+        app.input(UiInput::Key(Key::Char('j')), now);
+    }
+    let selected = app.notifications.tab.selection.id();
+    let viewport = *app.viewport();
+    assert_ne!(selected, Some(first));
+    assert!(viewport.top() > 0);
+    assert!(app.input(UiInput::Key(Key::Char('g')), now).is_empty());
+    assert_eq!(app.notifications.tab.selection.id(), selected);
+    assert_eq!(*app.viewport(), viewport);
+    assert!(
+        app.input(
+            UiInput::Key(Key::Char('g')),
+            now + Duration::from_millis(100),
+        )
+        .is_empty()
+    );
+    assert_eq!(app.notifications.tab.selection.id(), Some(first));
+    assert_eq!(app.viewport().top(), 0);
+}
+
 fn draw(app: &App) -> ratatui::buffer::Buffer {
     let mut terminal = ratatui::Terminal::new(ratatui::backend::TestBackend::new(
         app.size.width,

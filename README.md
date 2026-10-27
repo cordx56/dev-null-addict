@@ -130,6 +130,7 @@ In the timeline and in threads:
 | Key | |
 |---|---|
 | `j` / `k`, `↓` / `↑` | Next / previous commit. A commit taller than the list scrolls line by line first |
+| `gg` | Go to the top of the list |
 | `h` / `l`, `←` / `→` | Previous / next tab: Following, Latest, Trending, Notifications, Profile (timeline only) |
 | `Enter` | Open the thread, with every commit in full |
 | `r` | Reply |

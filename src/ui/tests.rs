@@ -685,6 +685,16 @@ fn standalone_escape_and_help() {
         help::HelpContext::ConfirmDelete,
     ] {
         let entries = help::entries(context, app.toggle);
+        // List help places gg directly after vertical navigation.
+        if matches!(
+            context,
+            help::HelpContext::Timeline | help::HelpContext::Thread
+        ) {
+            let navigation = entries.iter().position(|(key, _)| key == "j / k").unwrap();
+            assert_eq!(entries[navigation + 1], ("gg".to_owned(), "top"));
+        } else {
+            assert!(!entries.iter().any(|(key, _)| key == "gg"));
+        }
         assert!(entries.contains(&("Esc".to_owned(), "back / quit")));
         assert_eq!(entries.iter().filter(|(key, _)| key == "Esc").count(), 1);
         assert!(
